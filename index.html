@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Pydiode IDE</title>
+
+<link rel="manifest" href="manifest.json">
+
+<link rel="stylesheet"
+ href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+
+<style>
+body { margin:0; font-family:sans-serif; }
+#toolbar { padding:10px; background:#222; color:white; }
+#editor { height:70vh; }
+#output { height:30vh; overflow:auto; background:black; color:#0f0; padding:10px; }
+button { margin-right:10px; }
+</style>
+</head>
+
+<body>
+
+<div id="toolbar">
+  <button id="pickFolder">Select Folder</button>
+  <button id="run">Run ▶</button>
+  <span id="status"></span>
+</div>
+
+<textarea id="editor">print("Hello from Pyodide!")</textarea>
+<pre id="output"></pre>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+
+<script src="app.js"></script>
+</body>
+</html>
