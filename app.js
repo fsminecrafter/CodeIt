@@ -1,56 +1,80 @@
-const output = document.getElementById("output");
-const status = document.getElementById("status");
+const terminal = document.getElementById("terminal");
+const tabsEl = document.getElementById("tabs");
+
+function term(text) {
+  terminal.textContent += text;
+  terminal.scrollTop = terminal.scrollHeight;
+}
 
 const editor = CodeMirror.fromTextArea(
   document.getElementById("editor"),
-  {
-    mode: "python",
-    lineNumbers: true,
-    theme: "default"
-  }
+  { mode:"python", lineNumbers:true }
 );
 
 const worker = new Worker("worker.js");
 
 worker.onmessage = e => {
-  if (e.data.type === "output") {
-    output.textContent += e.data.text;
-  }
+  if (e.data.type === "output")
+    term(e.data.text);
 };
 
 document.getElementById("run").onclick = () => {
-  output.textContent = "";
+  terminal.textContent = "";
   worker.postMessage({
-    type: "run",
+    type:"run",
     code: editor.getValue()
   });
 };
 
-let dirHandle = null;
-let fileHandle = null;
-
-document.getElementById("pickFolder").onclick = async () => {
-  dirHandle = await window.showDirectoryPicker();
-
-  fileHandle = await dirHandle.getFileHandle("main.py", {
-    create: true
-  });
-
-  status.textContent = "Folder selected";
+document.getElementById("toggleTerm").onclick = () => {
+  terminal.classList.toggle("hidden");
 };
 
-async function saveFile() {
-  if (!fileHandle) return;
+//// MULTI TAB SYSTEM
 
-  const writable = await fileHandle.createWritable();
-  await writable.write(editor.getValue());
-  await writable.close();
+let files = {};
+let current = null;
 
-  status.textContent = "Saved " + new Date().toLocaleTimeString();
+function createTab(name, content="") {
+  files[name] = content;
+
+  const tab = document.createElement("div");
+  tab.className = "tab";
+  tab.textContent = name;
+
+  tab.onclick = () => switchTab(name, tab);
+
+  tabsEl.appendChild(tab);
+
+  switchTab(name, tab);
 }
 
-setInterval(saveFile, 5000);
+function switchTab(name, tabEl) {
+  current = name;
 
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("service-worker.js");
+  document.querySelectorAll(".tab")
+    .forEach(t => t.classList.remove("active"));
+
+  tabEl.classList.add("active");
+
+  editor.setValue(files[name]);
 }
+
+editor.on("change", () => {
+  if (current)
+    files[current] = editor.getValue();
+});
+
+//// OPEN FILE FROM DISK
+
+document.getElementById("openFile").onclick = async () => {
+  const [file] = await window.showOpenFilePicker();
+
+  const text = await (await file.getFile()).text();
+
+  createTab(file.name, text);
+};
+
+//// START WITH DEFAULT FILE
+
+createTab("main.py", 'print("Hello!")');
