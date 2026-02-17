@@ -7,20 +7,19 @@ let pyodideReady = loadPyodide();
 self.onmessage = async e => {
   const pyodide = await pyodideReady;
 
-  if (e.data.type === "run") {
-    try {
-      pyodide.setStdout({
-        batched: msg =>
-          self.postMessage({ type: "output", text: msg })
-      });
+  try {
+    pyodide.setStdout({
+      batched: msg =>
+        self.postMessage({type:"output", text:msg})
+    });
 
+    if (e.data.type === "run")
       await pyodide.runPythonAsync(e.data.code);
 
-    } catch (err) {
-      self.postMessage({
-        type: "output",
-        text: err + "\n"
-      });
-    }
+  } catch (err) {
+    self.postMessage({
+      type:"output",
+      text: err + "\n"
+    });
   }
 };
