@@ -4,30 +4,84 @@
 <meta charset="UTF-8">
 <title>Pydiode IDE</title>
 
-<link rel="manifest" href="manifest.json">
-
 <link rel="stylesheet"
  href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 
 <style>
-body { margin:0; font-family:sans-serif; }
-#toolbar { padding:10px; background:#222; color:white; }
-#editor { height:70vh; }
-#output { height:30vh; overflow:auto; background:black; color:#0f0; padding:10px; }
-button { margin-right:10px; }
+body {
+  margin:0;
+  background:#1e1e1e;
+  color:white;
+  font-family:sans-serif;
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+}
+
+#toolbar {
+  background:#2d2d2d;
+  padding:8px;
+}
+
+#tabs {
+  display:flex;
+  background:#252526;
+}
+
+.tab {
+  padding:8px 12px;
+  cursor:pointer;
+  border-right:1px solid #333;
+}
+
+.tab.active { background:#1e1e1e; }
+
+#container {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+}
+
+#editorWrap {
+  flex:1;
+}
+
+.CodeMirror {
+  height:100%;
+}
+
+#terminal {
+  background:black;
+  color:#0f0;
+  padding:8px;
+  font-family:monospace;
+  height:200px;
+  overflow:auto;
+  resize:vertical;
+}
+
+.hidden { display:none; }
+
+button { margin-right:8px; }
 </style>
 </head>
 
 <body>
 
 <div id="toolbar">
-  <button id="pickFolder">Select Folder</button>
+  <button id="openFile">Open File</button>
   <button id="run">Run ▶</button>
-  <span id="status"></span>
+  <button id="toggleTerm">Toggle Terminal</button>
 </div>
 
-<textarea id="editor">print("Hello from Pyodide!")</textarea>
-<pre id="output"></pre>
+<div id="tabs"></div>
+
+<div id="container">
+  <div id="editorWrap">
+    <textarea id="editor"></textarea>
+  </div>
+  <div id="terminal"></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
