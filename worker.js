@@ -15,6 +15,14 @@ self.onmessage = async e => {
 
     if (e.data.type === "run")
       await pyodide.runPythonAsync(e.data.code);
+    if(e.data.type==="install"){
+      await pyodide.runPythonAsync(`
+    import micropip
+    await micropip.install("${e.data.package}")
+    print("Installed ${e.data.package}")
+    `);
+    }
+
 
   } catch (err) {
     self.postMessage({
@@ -23,3 +31,4 @@ self.onmessage = async e => {
     });
   }
 };
+
