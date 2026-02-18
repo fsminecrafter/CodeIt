@@ -204,12 +204,13 @@ pyVersions.appendChild(runBtn);
   pyVersions.appendChild(d);
 });
 
-//// ===== MENU HOOKS =====
-openFile.onclick=openFile;
-openFolder.onclick=openFolder;
-newFile.onclick=newFile;
-saveAs.onclick=saveAs;
+//// ===== MENU HOOKS (FIXED) =====
 
+document.getElementById("openFile").onclick = openFile;
+document.getElementById("openFolder").onclick = openFolder;
+document.getElementById("newFile").onclick = newFile;
+document.getElementById("saveAs").onclick = saveAs;
+document.getElementById("toggleAutosave").onclick = toggleAutosave;
 //// ===== START =====
 files.set("main.py",{handle:null,content:'print("Hello from Pydiode!")'});
 refreshTree();
