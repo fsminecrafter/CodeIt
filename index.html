@@ -27,30 +27,52 @@ body{
   flex-direction:column;
   background:var(--bg);
   color:var(--text);
-  font-family:system-ui,Segoe UI,Roboto,sans-serif;
+  font-family:system-ui,Segoe UI,sans-serif;
 }
 
-#toolbar{
+/* MENU BAR */
+
+#menubar{
   background:var(--panel2);
-  padding:8px;
   display:flex;
-  align-items:center;
-  gap:8px;
+  gap:20px;
+  padding:6px 10px;
+  user-select:none;
   border-bottom:1px solid var(--border);
 }
 
-button{
-  background:var(--accent);
-  border:none;
-  color:white;
-  padding:6px 12px;
-  border-radius:4px;
+.menu{
+  position:relative;
   cursor:pointer;
 }
 
-button:hover{
-  filter:brightness(1.1);
+.menu:hover{ color:white; }
+
+.dropdown{
+  display:none;
+  position:absolute;
+  top:100%;
+  left:0;
+  background:var(--panel);
+  border:1px solid var(--border);
+  min-width:180px;
+  z-index:100;
 }
+
+.dropdown div{
+  padding:8px;
+  cursor:pointer;
+}
+
+.dropdown div:hover{
+  background:var(--accent);
+}
+
+.menu.open .dropdown{
+  display:block;
+}
+
+/* LAYOUT */
 
 #main{
   flex:1;
@@ -63,7 +85,6 @@ button:hover{
   background:var(--panel);
   border-right:1px solid var(--border);
   padding:10px;
-  font-size:14px;
 }
 
 #tabs{
@@ -80,7 +101,6 @@ button:hover{
 
 .tab.active{
   background:var(--bg);
-  color:white;
 }
 
 #editorArea{
@@ -89,14 +109,9 @@ button:hover{
   flex-direction:column;
 }
 
-#editorWrap{
-  flex:1;
-}
+#editorWrap{ flex:1; }
 
-.CodeMirror{
-  height:100%;
-  font-size:14px;
-}
+.CodeMirror{ height:100%; }
 
 #terminal{
   height:180px;
@@ -111,15 +126,46 @@ button:hover{
 
 .hidden{ display:none; }
 
+.dialog{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:var(--panel);
+  padding:20px;
+  border:1px solid var(--border);
+  z-index:200;
+}
+
 </style>
 </head>
 
 <body>
 
-<div id="toolbar">
-  <button id="openFile">Open File</button>
-  <button id="run">Run ▶</button>
-  <button id="toggleTerm">Terminal</button>
+<!-- MENU BAR -->
+
+<div id="menubar">
+
+  <div class="menu">File
+    <div class="dropdown">
+      <div id="saveAs">Save As</div>
+      <div id="toggleAutosave">Auto save: OFF</div>
+      <div id="openFolder">Open Folder</div>
+      <div id="openFile">Open File</div>
+    </div>
+  </div>
+
+  <div class="menu">Edit
+    <div class="dropdown">
+      <div id="findReplace">Find & Replace</div>
+      <div id="packageManager">Package Manager</div>
+    </div>
+  </div>
+
+  <div class="menu">Python
+    <div class="dropdown" id="pyVersions"></div>
+  </div>
+
 </div>
 
 <div id="main">
@@ -142,6 +188,8 @@ button:hover{
   </div>
 
 </div>
+
+<div id="dialog" class="dialog hidden"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
