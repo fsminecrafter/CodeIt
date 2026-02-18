@@ -1,34 +1,35 @@
-importScripts(
-  "https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"
-);
+let pyodide=null;
 
-let pyodideReady = loadPyodide();
+async function load(){
+  const v=new URL(self.location).searchParams.get("v") || "0.27.2";
 
-self.onmessage = async e => {
-  const pyodide = await pyodideReady;
+  importScripts(`https://cdn.jsdelivr.net/pyodide/v${v}/full/pyodide.js`);
+  pyodide=await loadPyodide();
 
-  try {
-    pyodide.setStdout({
-      batched: msg =>
-        self.postMessage({type:"output", text:msg})
-    });
+  self.postMessage({type:"output", text:"Pyodide "+v+" ready"});
+}
+load();
 
-    if (e.data.type === "run")
-      await pyodide.runPythonAsync(e.data.code);
-    if(e.data.type==="install"){
-      await pyodide.runPythonAsync(`
-    import micropip
-    await micropip.install("${e.data.package}")
-    print("Installed ${e.data.package}")
-    `);
+self.onmessage=async e=>{
+  const {type,code,package:pkg}=e.data;
+
+  if(type==="run"){
+    try{
+      const r=await pyodide.runPythonAsync(code);
+      if(r!==undefined) self.postMessage({type:"output",text:String(r)});
+    }catch(err){
+      self.postMessage({type:"output",text:String(err)});
     }
+  }
 
-
-  } catch (err) {
-    self.postMessage({
-      type:"output",
-      text: err + "\n"
-    });
+  if(type==="install"){
+    try{
+      await pyodide.loadPackage("micropip");
+      const micropip=pyodide.pyimport("micropip");
+      await micropip.install(pkg);
+      self.postMessage({type:"output",text:"Installed "+pkg});
+    }catch(err){
+      self.postMessage({type:"output",text:String(err)});
+    }
   }
 };
-
