@@ -1,70 +1,66 @@
-const terminal = document.getElementById("terminal");
-const tabsEl = document.getElementById("tabs");
-const fileList = document.getElementById("fileList");
+//// MENU OPEN/CLOSE
 
-function term(text){
-  terminal.textContent += text;
+document.querySelectorAll(".menu").forEach(menu=>{
+  menu.onclick=e=>{
+    e.stopPropagation();
+    document.querySelectorAll(".menu")
+      .forEach(m=>m.classList.remove("open"));
+    menu.classList.add("open");
+  };
+});
+
+document.body.onclick=()=>{
+  document.querySelectorAll(".menu")
+    .forEach(m=>m.classList.remove("open"));
+};
+
+//// TERMINAL
+
+const terminal = document.getElementById("terminal");
+
+function term(t){
+  terminal.textContent += t;
   terminal.scrollTop = terminal.scrollHeight;
 }
 
+//// EDITOR
+
 const editor = CodeMirror.fromTextArea(
   document.getElementById("editor"),
-  {
-    mode:"python",
-    theme:"material-darker",
-    lineNumbers:true
-  }
+  { mode:"python", theme:"material-darker", lineNumbers:true }
 );
 
-const worker = new Worker("worker.js");
+//// WORKER (Pyodide)
 
-worker.onmessage = e=>{
+let pyVersion = "0.27.2";
+
+function createWorker(){
+  return new Worker("worker.js?v="+pyVersion);
+}
+
+let worker = createWorker();
+
+worker.onmessage=e=>{
   if(e.data.type==="output")
     term(e.data.text);
 };
 
-document.getElementById("run").onclick = ()=>{
-  terminal.textContent="";
-  worker.postMessage({
-    type:"run",
-    code:editor.getValue()
-  });
-};
-
-document.getElementById("toggleTerm").onclick = ()=>{
-  terminal.classList.toggle("hidden");
-};
-
 //// FILE SYSTEM (in-memory)
 
-let files = {};
-let current = null;
-
-function refreshFileList(){
-  fileList.innerHTML="";
-  for(const name in files){
-    const div=document.createElement("div");
-    div.textContent=name;
-    div.style.cursor="pointer";
-    div.onclick=()=>switchTo(name);
-    fileList.appendChild(div);
-  }
-}
+let files={}, current=null;
 
 function createFile(name,content=""){
   files[name]=content;
   createTab(name);
-  refreshFileList();
+  refreshList();
 }
 
 function createTab(name){
   const tab=document.createElement("div");
   tab.className="tab";
   tab.textContent=name;
-
   tab.onclick=()=>switchTo(name);
-
-  tabsEl.appendChild(tab);
+  tabs.appendChild(tab);
   switchTo(name);
 }
 
@@ -74,7 +70,7 @@ function switchTo(name){
   document.querySelectorAll(".tab")
     .forEach(t=>t.classList.remove("active"));
 
-  [...tabsEl.children]
+  [...tabs.children]
     .find(t=>t.textContent===name)
     .classList.add("active");
 
@@ -86,14 +82,105 @@ editor.on("change",()=>{
     files[current]=editor.getValue();
 });
 
-//// OPEN FILE
+function refreshList(){
+  fileList.innerHTML="";
+  for(const f in files){
+    const d=document.createElement("div");
+    d.textContent=f;
+    d.onclick=()=>switchTo(f);
+    fileList.appendChild(d);
+  }
+}
 
-document.getElementById("openFile").onclick = async ()=>{
+//// FILE MENU ACTIONS
+
+let autosave=false;
+let saveHandle=null;
+
+toggleAutosave.onclick=()=>{
+  autosave=!autosave;
+  toggleAutosave.textContent=
+    "Auto save: "+(autosave?"ON":"OFF");
+};
+
+setInterval(async ()=>{
+  if(autosave && saveHandle){
+    const w = await saveHandle.createWritable();
+    await w.write(editor.getValue());
+    await w.close();
+  }
+},5000);
+
+saveAs.onclick = async ()=>{
+  saveHandle = await window.showSaveFilePicker({
+    suggestedName: current || "file.py"
+  });
+
+  const w = await saveHandle.createWritable();
+  await w.write(editor.getValue());
+  await w.close();
+};
+
+openFile.onclick = async ()=>{
   const [file] = await window.showOpenFilePicker();
   const text = await (await file.getFile()).text();
   createFile(file.name,text);
 };
 
+openFolder.onclick = async ()=>{
+  const dir = await window.showDirectoryPicker();
+  for await (const entry of dir.values()){
+    if(entry.kind==="file"){
+      const f = await entry.getFile();
+      createFile(f.name, await f.text());
+    }
+  }
+};
+
+//// EDIT MENU
+
+findReplace.onclick=()=>{
+  const find = prompt("Find:");
+  if(!find) return;
+  const rep = prompt("Replace with:");
+  editor.setValue(
+    editor.getValue().replaceAll(find,rep)
+  );
+};
+
+packageManager.onclick=()=>{
+  const pkg = prompt("Install package:");
+  if(!pkg) return;
+
+  worker.postMessage({
+    type:"install",
+    package:pkg
+  });
+};
+
+//// PYTHON MENU (versions)
+
+const versions = [
+ "0.27.2",
+ "0.26.4",
+ "0.25.1",
+ "0.24.1",
+ "0.23.4",
+ "0.22.1"
+];
+
+versions.forEach(v=>{
+  const d=document.createElement("div");
+  d.textContent="Pyodide "+v;
+  d.onclick=()=>{
+    pyVersion=v;
+    worker.terminate();
+    worker=createWorker();
+    term(`Switched to Pyodide ${v}\n`);
+  };
+  pyVersions.appendChild(d);
+});
+
 //// START FILE
 
-createFile("main.py",'print("Hello from Pydiode!")');
+createFile("main.py",'print("Hello!")');
