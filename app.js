@@ -1,316 +1,216 @@
-//// ================= MENU =================
-
+//// ===== MENU =====
 document.querySelectorAll(".menu").forEach(menu=>{
   menu.onclick=e=>{
     e.stopPropagation();
-    document.querySelectorAll(".menu")
-      .forEach(m=>m.classList.remove("open"));
+    document.querySelectorAll(".menu").forEach(m=>m.classList.remove("open"));
     menu.classList.add("open");
   };
 });
+document.body.onclick=()=> document.querySelectorAll(".menu").forEach(m=>m.classList.remove("open"));
 
-document.body.onclick=()=>{
-  document.querySelectorAll(".menu")
-    .forEach(m=>m.classList.remove("open"));
-};
-
-//// ================= TERMINAL =================
-
+//// ===== TERMINAL =====
 const terminal = document.getElementById("terminal");
+function term(t){ terminal.textContent += t + "\n"; terminal.scrollTop = terminal.scrollHeight; }
 
-function term(text){
-  terminal.textContent += text + "\n";
-  terminal.scrollTop = terminal.scrollHeight;
-}
+//// ===== EDITOR =====
+const editor = CodeMirror.fromTextArea(document.getElementById("editor"),{
+  mode:"python", theme:"material-darker", lineNumbers:true
+});
 
-//// ================= EDITOR =================
+//// ===== PYODIDE WORKER =====
+let pyVersion="0.27.2";
+let worker=createWorker();
 
-const editor = CodeMirror.fromTextArea(
-  document.getElementById("editor"),
-  { mode:"python", theme:"material-darker", lineNumbers:true }
-);
+function createWorker(){ return new Worker("worker.js?v="+pyVersion); }
 
-//// ================= PYODIDE WORKER =================
-
-let pyVersion = "0.27.2";
-
-function createWorker(){
-  return new Worker("worker.js?v="+pyVersion);
-}
-
-let worker = createWorker();
-
-worker.onmessage = e=>{
-  if(e.data.type === "output")
-    term(e.data.text);
+worker.onmessage=e=>{
+  if(e.data.type==="output") term(e.data.text);
 };
 
 function runCurrent(){
-  if(!currentFile) return;
-
-  terminal.textContent = "";
-
-  worker.postMessage({
-    type:"run",
-    code: editor.getValue()
-  });
+  const f = getCurrentFile();
+  if(!f) return;
+  terminal.textContent="";
+  worker.postMessage({type:"run", code:f.content});
 }
 
-//// ================= FILE DATA =================
+//// ===== PROJECT DATA =====
+const files = new Map();   // name → {handle,content}
+let current = null;
 
-const files = {};          // name → content
-const openTabs = {};       // name → tabElement
-let currentFile = null;
-
-const tabs = document.getElementById("tabs");
+const tabsEl = document.getElementById("tabs");
 const fileList = document.getElementById("fileList");
 
-//// ---------- FILE TREE ----------
+function getCurrentFile(){ return current ? files.get(current) : null; }
 
+//// ===== FILE TREE =====
 function refreshTree(){
-
-  fileList.innerHTML = "";
-
-  for(const name in files){
-
-    const item = document.createElement("div");
-    item.textContent = name;
-    item.style.cursor = "pointer";
-
-    item.onclick = ()=> openTab(name);
-
-    fileList.appendChild(item);
+  fileList.innerHTML="";
+  for(const [name] of files){
+    const d=document.createElement("div");
+    d.textContent=name;
+    d.className="fileItem";
+    d.onclick=()=>openTab(name);
+    fileList.appendChild(d);
   }
 }
 
-//// ---------- TAB SYSTEM ----------
-
+//// ===== TABS =====
 function openTab(name){
+  if(!files.has(name)) return;
 
-  if(!files[name]) return;
+  if(current===name){ activateTab(name); return; }
 
-  // Already open → just switch
-  if(openTabs[name]){
-    activateTab(name);
-    return;
-  }
+  const tab=document.createElement("div");
+  tab.className="tab";
+  tab.dataset.name=name;
 
-  const tab = document.createElement("div");
-  tab.className = "tab";
+  const title=document.createElement("span");
+  title.textContent=name;
 
-  const title = document.createElement("span");
-  title.textContent = name;
+  const close=document.createElement("span");
+  close.textContent="×";
+  close.onclick=e=>{ e.stopPropagation(); closeTab(name); };
 
-  const close = document.createElement("span");
-  close.textContent = " ×";
-  close.style.color = "#aaa";
-  close.style.cursor = "pointer";
+  tab.append(title,close);
+  tab.onclick=()=>activateTab(name);
 
-  close.onclick = e=>{
-    e.stopPropagation();
-    closeTab(name);
-  };
-
-  tab.append(title, close);
-
-  tab.onclick = ()=> activateTab(name);
-
-  tabs.appendChild(tab);
-  openTabs[name] = tab;
-
+  tabsEl.appendChild(tab);
   activateTab(name);
 }
 
 function activateTab(name){
+  current=name;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  const tab=[...tabsEl.children].find(t=>t.dataset.name===name);
+  if(tab) tab.classList.add("active");
 
-  if(!files[name]) return;
-
-  currentFile = name;
-
-  document.querySelectorAll(".tab")
-    .forEach(t=>t.classList.remove("active"));
-
-  openTabs[name].classList.add("active");
-
-  editor.setValue(files[name]);
-  editor.focus();
+  const f=files.get(name);
+  editor.setValue(f.content || "");
 }
 
 function closeTab(name){
+  const tab=[...tabsEl.children].find(t=>t.dataset.name===name);
+  if(tab) tab.remove();
 
-  const tab = openTabs[name];
-  if(!tab) return;
-
-  tab.remove();
-  delete openTabs[name];
-
-  if(currentFile === name){
-
-    const remaining = Object.keys(openTabs);
-
-    if(remaining.length){
-      activateTab(remaining[remaining.length - 1]);
-    }else{
-      currentFile = null;
-      editor.setValue("");
-    }
+  if(current===name){
+    current=null;
+    editor.setValue("");
   }
 }
 
-editor.on("change", ()=>{
-  if(currentFile)
-    files[currentFile] = editor.getValue();
+editor.on("change",()=>{
+  const f=getCurrentFile();
+  if(f) f.content=editor.getValue();
 });
 
-//// ---------- FILE OPERATIONS ----------
+//// ===== FILE OPS =====
 
-function createFile(name, content=""){
+async function openFile(){
+  const [h]=await window.showOpenFilePicker();
+  const file=await h.getFile();
+  const text=await file.text();
 
-  if(files[name]) return;
+  files.set(file.name,{handle:h,content:text});
+  refreshTree();
+  openTab(file.name);
+}
 
-  files[name] = content;
+async function openFolder(){
+  const dir=await window.showDirectoryPicker();
 
+  let mainFound=false;
+
+  for await (const entry of dir.values()){
+    if(entry.kind==="file"){
+      const f=await entry.getFile();
+      const text=await f.text();
+
+      files.set(f.name,{handle:entry,content:text});
+      if(f.name==="main.py") mainFound=true;
+    }
+  }
+
+  refreshTree();
+
+  if(mainFound) openTab("main.py");
+}
+
+async function newFile(){
+  const name=prompt("File name","new.py");
+  if(!name) return;
+  files.set(name,{handle:null,content:""});
   refreshTree();
   openTab(name);
 }
 
-newFile.onclick = ()=>{
-  const name = prompt("File name:", "new.py");
-  if(name) createFile(name, "");
-};
+//// ===== SAVE =====
 
-async function openFile() {
-  try {
-    const [fileHandle] = await window.showOpenFilePicker({
-      types: [
-        {
-          description: "Python Files",
-          accept: { "text/plain": [".py", ".txt"] }
-        }
-      ]
-    });
-
-    const file = await fileHandle.getFile();
-    const content = await file.text();
-
-    openTab(file.name, content, fileHandle);
-
-  } catch (err) {
-    console.log("Open file cancelled");
-  }
-}
-
-
-openFolder.onclick = async ()=>{
-
-  const dir = await window.showDirectoryPicker();
-
-  for await (const entry of dir.values()){
-    if(entry.kind === "file"){
-      const f = await entry.getFile();
-      createFile(f.name, await f.text());
-    }
-  }
-};
-
-//// ---------- SAVE ----------
-
-let saveHandle = null;
-let autosave = false;
-
-saveAs.onclick = async ()=>{
-
-  saveHandle = await window.showSaveFilePicker({
-    suggestedName: currentFile || "file.py"
-  });
-
-  const w = await saveHandle.createWritable();
-  await w.write(editor.getValue());
-  await w.close();
-};
-
-toggleAutosave.onclick = ()=>{
-  autosave = !autosave;
-  toggleAutosave.textContent =
-    "Auto save: " + (autosave ? "ON" : "OFF");
-};
-
-setInterval(async ()=>{
-  if(autosave && saveHandle && currentFile){
-
-    const w = await saveHandle.createWritable();
-    await w.write(editor.getValue());
-    await w.close();
-  }
-}, 5000);
-
-//// ---------- EDIT MENU ----------
-
-undo.onclick = ()=> editor.undo();
-redo.onclick = ()=> editor.redo();
-
-findReplace.onclick = ()=>{
-  const f = prompt("Find:");
+async function saveAs(){
+  const f=getCurrentFile();
   if(!f) return;
 
-  const r = prompt("Replace with:");
-  if(r === null) return;
+  const handle=await window.showSaveFilePicker({suggestedName:current});
+  const w=await handle.createWritable();
+  await w.write(f.content);
+  await w.close();
 
-  editor.setValue(
-    editor.getValue().replaceAll(f, r)
-  );
+  f.handle=handle;
+}
+
+let autosave=false;
+
+toggleAutosave.onclick=()=>{
+  autosave=!autosave;
+  toggleAutosave.textContent="Auto save: "+(autosave?"ON":"OFF");
 };
 
-document.addEventListener("keydown", e=>{
+setInterval(async()=>{
+  if(!autosave) return;
+  const f=getCurrentFile();
+  if(!f || !f.handle) return;
 
-  if(e.ctrlKey && e.key === "z"){
-    e.preventDefault();
-    editor.undo();
-  }
+  const w=await f.handle.createWritable();
+  await w.write(f.content);
+  await w.close();
+},5000);
 
-  if(e.ctrlKey && e.key === "y"){
-    e.preventDefault();
-    editor.redo();
-  }
-});
+//// ===== EDIT =====
+undo.onclick=()=>editor.undo();
+redo.onclick=()=>editor.redo();
 
-//// ---------- PACKAGE MANAGER ----------
-
-packageManager.onclick = ()=>{
-  const pkg = prompt("Install package:");
-  if(pkg)
-    worker.postMessage({type:"install", package:pkg});
+//// ===== PACKAGE MANAGER =====
+packageManager.onclick=()=>{
+  const pkg=prompt("Install package:");
+  if(pkg) worker.postMessage({type:"install", package:pkg});
 };
 
-//// ---------- PYTHON MENU ----------
+//// ===== PYTHON MENU =====
+const runBtn=document.createElement("div");
+runBtn.textContent="Run ▶";
+runBtn.onclick=runCurrent;
+pyVersions.appendChild(runBtn);
 
-// RUN BUTTON
-const runBtn = document.createElement("div");
-runBtn.textContent = "Run ▶";
-runBtn.onclick = runCurrent;
-pyVersions.prepend(runBtn);
-
-// VERSION SELECTOR
-const versions = [
- "0.27.2","0.26.4","0.25.1",
- "0.24.1","0.23.4","0.22.1"
-];
-
-versions.forEach(v=>{
-
-  const d = document.createElement("div");
-  d.textContent = "Pyodide " + v;
-
-  d.onclick = ()=>{
-    pyVersion = v;
+["0.27.2","0.26.4","0.25.1","0.24.1","0.23.4","0.22.1"]
+.forEach(v=>{
+  const d=document.createElement("div");
+  d.textContent="Pyodide "+v;
+  d.onclick=()=>{
+    pyVersion=v;
     worker.terminate();
-    worker = createWorker();
-    term("Switched to Pyodide " + v);
+    worker=createWorker();
+    term("Switched to "+v);
   };
-
   pyVersions.appendChild(d);
 });
 
-//// ---------- START ----------
+//// ===== MENU HOOKS =====
+openFile.onclick=openFile;
+openFolder.onclick=openFolder;
+newFile.onclick=newFile;
+saveAs.onclick=saveAs;
 
-createFile("main.py", 'print("Hello from Pydiode!")');
+//// ===== START =====
+files.set("main.py",{handle:null,content:'print("Hello from Pydiode!")'});
+refreshTree();
+openTab("main.py");
