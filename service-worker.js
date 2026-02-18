@@ -1,25 +1,18 @@
-const CACHE = "pydiode-v1";
+const CACHE="pydiode-cache-v1";
 
-const ASSETS = [
-  "/",
-  "/index.html",
-  "/app.js",
-  "/worker.js",
-  "/manifest.json"
-];
-
-self.addEventListener("install", e => {
+self.addEventListener("install",e=>{
   e.waitUntil(
-    caches.open(CACHE).then(cache =>
-      cache.addAll(ASSETS)
-    )
+    caches.open(CACHE).then(c=>c.addAll([
+      "./",
+      "./index.html",
+      "./app.js",
+      "./worker.js"
+    ]))
   );
 });
 
-self.addEventListener("fetch", e => {
+self.addEventListener("fetch",e=>{
   e.respondWith(
-    caches.match(e.request).then(
-      r => r || fetch(e.request)
-    )
+    caches.match(e.request).then(r=>r || fetch(e.request))
   );
 });
