@@ -179,13 +179,27 @@ newFile.onclick = ()=>{
   if(name) createFile(name, "");
 };
 
-openFile.onclick = async ()=>{
+async function openFile() {
+  try {
+    const [fileHandle] = await window.showOpenFilePicker({
+      types: [
+        {
+          description: "Python Files",
+          accept: { "text/plain": [".py", ".txt"] }
+        }
+      ]
+    });
 
-  const [file] = await window.showOpenFilePicker();
-  const text = await (await file.getFile()).text();
+    const file = await fileHandle.getFile();
+    const content = await file.text();
 
-  createFile(file.name, text);
-};
+    openTab(file.name, content, fileHandle);
+
+  } catch (err) {
+    console.log("Open file cancelled");
+  }
+}
+
 
 openFolder.onclick = async ()=>{
 
