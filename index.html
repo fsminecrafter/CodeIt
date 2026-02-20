@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>CodeIt IDE</title>
@@ -7,13 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap" rel="stylesheet">
-<link rel="icon" type="image/x-icon" href="favicon.ico">
-<link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
-<link rel="stylesheet"
- href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.1/codemirror.min.css">
 
-<link rel="stylesheet"
- href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.1/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.1/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.1/theme/material-darker.min.css">
 
 <style>
 :root{
@@ -41,7 +38,8 @@ body{
   gap:20px;
   padding:6px 10px;
   border-bottom:1px solid var(--border);
-  font-family: "Google Sans", monospace;
+  font-family:"Google Sans", monospace;
+  z-index:200;
 }
 
 .menu{ position:relative; cursor:pointer; }
@@ -67,7 +65,12 @@ body{
 
 .menu.open .dropdown{ display:block; }
 
-#main{ flex:1; display:flex; overflow:hidden; }
+#main{
+  flex:1;
+  display:flex;
+  overflow:hidden;
+  height: calc(100vh - 40px);
+}
 
 #sidebar{
   width:220px;
@@ -75,7 +78,14 @@ body{
   border-right:1px solid var(--border);
   padding:8px;
   overflow:auto;
-  font-family: "Google Sans", monospace;
+  font-family:"Google Sans", monospace;
+}
+
+#editorArea{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
 }
 
 #tabs{
@@ -95,40 +105,32 @@ body{
 
 .tab.active{ background:var(--bg); }
 
-#editorArea{
+#editorWrap{
+  flex:1;
+  display:flex;
+  overflow:hidden;
+}
+
+.editorPane{
   flex:1;
   display:flex;
   flex-direction:column;
 }
 
-#editorWrap{ flex:1; }
-.CodeMirror{ height:100%; }
+.CodeMirror{ height:100%; flex:1; }
 
 #terminal{
   height:180px;
   background:black;
   color:#0f0;
-  padding:10px;
   font-family:monospace;
   overflow:auto;
   resize:vertical;
   border-top:1px solid var(--border);
 }
-
 .fileItem{ cursor:pointer; padding:4px; }
 .fileItem:hover{ background:var(--accent); }
-
 .hidden{ display:none; }
-
-.dialog{
-  position:fixed;
-  top:50%; left:50%;
-  transform:translate(-50%,-50%);
-  background:var(--panel);
-  padding:20px;
-  border:1px solid var(--border);
-  z-index:200;
-}
 </style>
 </head>
 
@@ -165,7 +167,7 @@ body{
       <div id="support">Support</div>
     </div>
   </div>
- 
+
 </div>
 
 <div id="main">
@@ -179,7 +181,7 @@ body{
 
     <div id="tabs"></div>
 
-    <div id="editorWrap">
+    <div id="editorWrap" class="editorPane">
       <textarea id="editor"></textarea>
     </div>
 
