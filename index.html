@@ -8,121 +8,303 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 
 <!-- xterm.js -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"/>
 
-<!-- CodeMirror -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<!-- CodeMirror 6 — bundled from jsDelivr esm.run -->
+<!-- We use the pre-bundled CM6 from codemirror.net CDN  -->
+<script type="importmap">
+{
+  "imports": {
+    "codemirror":              "https://esm.sh/codemirror@6.0.1",
+    "@codemirror/view":        "https://esm.sh/@codemirror/view@6.35.3",
+    "@codemirror/state":       "https://esm.sh/@codemirror/state@6.5.2",
+    "@codemirror/language":    "https://esm.sh/@codemirror/language@6.10.8",
+    "@codemirror/commands":    "https://esm.sh/@codemirror/commands@6.8.0",
+    "@codemirror/search":      "https://esm.sh/@codemirror/search@6.5.10",
+    "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6.18.6",
+    "@codemirror/lint":        "https://esm.sh/@codemirror/lint@6.8.5",
+    "@codemirror/lang-python": "https://esm.sh/@codemirror/lang-python@6.1.7",
+    "@codemirror/lang-cpp":    "https://esm.sh/@codemirror/lang-cpp@6.0.3",
+    "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6.2.3",
+    "@codemirror/lang-html":   "https://esm.sh/@codemirror/lang-html@6.4.9",
+    "@codemirror/lang-css":    "https://esm.sh/@codemirror/lang-css@6.3.1",
+    "@codemirror/lang-json":   "https://esm.sh/@codemirror/lang-json@6.0.1",
+    "@codemirror/lang-markdown": "https://esm.sh/@codemirror/lang-markdown@6.3.2",
+    "@codemirror/theme-one-dark": "https://esm.sh/@codemirror/theme-one-dark@6.1.2",
+    "@lezer/highlight":        "https://esm.sh/@lezer/highlight@1.2.1"
+  }
+}
+</script>
 
 <style>
+/* ════════════════════════════════════════
+   CSS VARIABLES & RESET
+════════════════════════════════════════ */
 :root {
-  --bg:     #1e1e1e;
-  --panel:  #252526;
-  --panel2: #2d2d2d;
-  --border: #3c3c3c;
-  --accent: #0e639c;
-  --text:   #d4d4d4;
-  --text2:  #888;
+  --bg:       #141414;
+  --bg2:      #1c1c1c;
+  --bg3:      #242424;
+  --bg4:      #2c2c2c;
+  --border:   #333;
+  --border2:  #404040;
+  --accent:   #3b82f6;
+  --accent2:  #60a5fa;
+  --red:      #f87171;
+  --green:    #4ade80;
+  --yellow:   #fbbf24;
+  --text:     #e2e8f0;
+  --text2:    #94a3b8;
+  --text3:    #64748b;
+  --font-ui:  'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono:'IBM Plex Mono', 'Fira Code', Consolas, monospace;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Google Sans', system-ui, sans-serif;
   overflow: hidden;
+  font-size: 13px;
 }
 
-/* ── Menu bar ── */
+/* ════════════════════════════════════════
+   MENU BAR
+════════════════════════════════════════ */
 #menubar {
-  background: var(--panel2);
-  display: flex;
-  gap: 4px;
-  padding: 4px 8px;
+  background: var(--bg2);
   border-bottom: 1px solid var(--border);
-  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  height: 36px;
   flex-shrink: 0;
+  z-index: 200;
+  user-select: none;
+}
+
+#menubar .logo {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent2);
+  margin-right: 8px;
+  letter-spacing: -0.02em;
 }
 
 .menu {
   position: relative;
   cursor: pointer;
+}
+.menu > .menu-label {
   padding: 4px 10px;
   border-radius: 4px;
-  user-select: none;
   font-size: 13px;
+  color: var(--text2);
+  transition: background 0.1s, color 0.1s;
 }
-.menu:hover { background: rgba(255,255,255,0.08); }
+.menu:hover > .menu-label,
+.menu.open > .menu-label {
+  background: var(--bg4);
+  color: var(--text);
+}
 
 .dropdown {
   display: none;
   position: absolute;
-  top: calc(100% + 2px);
+  top: calc(100% + 4px);
   left: 0;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  min-width: 200px;
-  z-index: 300;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  min-width: 210px;
+  z-index: 400;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  padding: 4px;
   overflow: hidden;
 }
-.dropdown div {
-  padding: 7px 14px;
-  cursor: pointer;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.dropdown div:hover { background: var(--accent); color: white; }
 .menu.open .dropdown { display: block; }
 
-/* ── Main layout ── */
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 13px;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+.dropdown-item:hover { background: var(--bg4); color: var(--text); }
+.dropdown-item .shortcut { margin-left: auto; color: var(--text3); font-size: 11px; font-family: var(--font-mono); }
+.dropdown-separator { height: 1px; background: var(--border); margin: 4px 6px; }
+
+/* ════════════════════════════════════════
+   MAIN LAYOUT
+════════════════════════════════════════ */
 #main {
   flex: 1;
   display: flex;
   overflow: hidden;
 }
 
-/* ── Sidebar ── */
+/* ════════════════════════════════════════
+   SIDEBAR
+════════════════════════════════════════ */
 #sidebar {
-  width: 210px;
-  background: var(--panel);
+  width: 240px;
+  min-width: 160px;
+  max-width: 400px;
+  background: var(--bg2);
   border-right: 1px solid var(--border);
-  padding: 10px 6px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   flex-shrink: 0;
-  font-size: 13px;
-}
-#sidebar b {
-  display: block;
-  padding: 0 6px 6px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--text2);
+  user-select: none;
 }
 
-.fileItem {
-  padding: 5px 8px;
-  border-radius: 4px;
+#sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+#sidebar-header span {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text3);
+}
+#sidebar-actions {
+  display: flex;
+  gap: 2px;
+}
+.sidebar-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--text3);
   cursor: pointer;
-  white-space: nowrap;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background 0.1s, color 0.1s;
+}
+.sidebar-btn:hover { background: var(--bg4); color: var(--text); }
+
+#folder-root-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+#folder-root-bar .folder-root-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text2);
 }
-.fileItem:hover  { background: rgba(255,255,255,0.06); }
-.fileItem.active { background: var(--accent); color: white; }
+#folder-root-bar button {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.1s;
+}
+#folder-root-bar button:hover { background: var(--bg4); color: var(--text); }
 
-/* ── Editor area ── */
-#editorArea {
+#file-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+#file-tree::-webkit-scrollbar { width: 6px; }
+#file-tree::-webkit-scrollbar-track { background: transparent; }
+#file-tree::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+/* Tree items */
+.tree-item {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding-right: 8px;
+  cursor: pointer;
+  color: var(--text2);
+  border-radius: 0;
+  transition: background 0.08s;
+  position: relative;
+}
+.tree-item:hover { background: rgba(255,255,255,0.04); }
+.tree-item.active { background: rgba(59,130,246,0.15); color: var(--text); }
+.tree-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.tree-indent { display: inline-block; width: 16px; flex-shrink: 0; }
+.tree-toggle {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text3);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.tree-toggle.open { transform: rotate(90deg); }
+.tree-icon { margin-right: 5px; font-size: 13px; flex-shrink: 0; }
+.tree-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.tree-item.folder-item > .tree-label { color: var(--text); }
+
+/* Sidebar resize handle */
+#sidebar-resize {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+#sidebar-resize:hover, #sidebar-resize.dragging { background: var(--accent); }
+
+/* ════════════════════════════════════════
+   EDITOR AREA
+════════════════════════════════════════ */
+#editor-area {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -130,175 +312,765 @@ body {
   min-width: 0;
 }
 
-/* ── Tab bar ── */
+/* ════════════════════════════════════════
+   TABS
+════════════════════════════════════════ */
 #tabs {
   display: flex;
-  background: var(--panel);
+  background: var(--bg2);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
   scrollbar-width: none;
   align-items: stretch;
+  height: 36px;
 }
 #tabs::-webkit-scrollbar { display: none; }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 12px;
+  gap: 6px;
+  padding: 0 14px;
   height: 36px;
   cursor: pointer;
   border-right: 1px solid var(--border);
   font-size: 13px;
   white-space: nowrap;
   flex-shrink: 0;
-  user-select: none;
-  transition: background 0.1s;
+  color: var(--text3);
+  transition: background 0.1s, color 0.1s;
+  position: relative;
 }
-.tab:hover:not(.active) { background: rgba(255,255,255,0.05); }
+.tab:hover:not(.active) { background: var(--bg3); color: var(--text2); }
 .tab.active {
   background: var(--bg);
-  border-bottom: 2px solid var(--accent);
-  color: white;
-}
-.tab.dragging  { opacity: 0.4; }
-.tab.drag-over { border-left: 2px solid var(--accent); }
-
-.tabClose {
-  color: var(--text2);
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 2px;
-  border-radius: 3px;
-}
-.tabClose:hover { background: rgba(255,255,255,0.15); color: white; }
-
-/* Run tab special styling */
-.run-tab {
-  gap: 8px;
-  padding: 0 10px;
-  background: var(--panel2);
-}
-.run-tab:hover { background: rgba(255,255,255,0.05); }
-.run-tab.active { background: var(--bg); }
-
-#langSelect {
-  background: var(--panel);
   color: var(--text);
-  border: 1px solid var(--border);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 12px;
-  cursor: pointer;
 }
+.tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.tab.dragging { opacity: 0.3; }
+.tab.drag-over { background: rgba(59,130,246,0.1); }
 
-#runBtn {
-  background: #1a7a1a;
-  color: white;
-  border: none;
+.tab-icon { font-size: 12px; }
+.tab-close {
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1;
+  color: var(--text3);
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+.tab:hover .tab-close,
+.tab.active .tab-close { opacity: 1; }
+.tab-close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.tab-modified::after { content: '●'; color: var(--yellow); font-size: 8px; margin-left: 2px; }
+
+/* Run tab */
+.run-tab { gap: 8px; background: var(--bg2); }
+.run-tab.active { background: var(--bg); }
+#lang-select {
+  background: var(--bg4);
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  outline: none;
+}
+#run-btn {
+  background: #166534;
+  color: #4ade80;
+  border: 1px solid #15803d;
   padding: 3px 12px;
   border-radius: 4px;
   font-size: 12px;
+  font-family: var(--font-ui);
+  font-weight: 600;
   cursor: pointer;
-  font-weight: 500;
+  transition: all 0.1s;
+  letter-spacing: 0.02em;
 }
-#runBtn:hover:not(:disabled) { background: #1f9c1f; }
-#runBtn:disabled { opacity: 0.5; cursor: default; }
+#run-btn:hover:not(:disabled) { background: #15803d; color: #86efac; }
+#run-btn:disabled { opacity: 0.4; cursor: default; }
 
-/* ── Editor wrap ── */
-#editorWrap {
+/* ════════════════════════════════════════
+   FIND BAR
+════════════════════════════════════════ */
+#find-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#find-bar.visible { display: flex; }
+#find-input {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  width: 260px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#find-input:focus { border-color: var(--accent); }
+#find-input.no-match { border-color: var(--red); background: rgba(248,113,113,0.08); }
+#find-bar .find-info {
+  font-size: 12px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+  min-width: 70px;
+}
+.find-btn {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.1s;
+}
+.find-btn:hover { background: var(--bg2); color: var(--text); border-color: var(--border2); }
+#find-close {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.1s;
+  margin-left: auto;
+}
+#find-close:hover { color: var(--text); }
+
+/* ════════════════════════════════════════
+   EDITOR WRAP
+════════════════════════════════════════ */
+#editor-wrap {
   flex: 1;
-  display: flex;
   overflow: hidden;
-  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+#editor-wrap.hidden { display: none; }
+
+#cm-editor {
+  flex: 1;
+  overflow: hidden;
+  font-family: var(--font-mono);
 }
 
-.CodeMirror {
-  height: 100% !important;
-  font-family: 'Fira Code', Consolas, monospace !important;
-  font-size: 14px !important;
+/* CM6 styling */
+.cm-editor {
+  height: 100%;
+  background: var(--bg) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 14px;
 }
-.CodeMirror-scroll { height: 100%; }
+.cm-editor.cm-focused { outline: none !important; }
+.cm-scroller { overflow: auto !important; }
+.cm-gutters {
+  background: var(--bg) !important;
+  border-right: 1px solid var(--border) !important;
+  color: var(--text3) !important;
+}
+.cm-activeLineGutter { background: rgba(255,255,255,0.03) !important; }
+.cm-activeLine { background: rgba(255,255,255,0.03) !important; }
+.cm-selectionBackground { background: rgba(59,130,246,0.25) !important; }
+.cm-focused .cm-selectionBackground { background: rgba(59,130,246,0.3) !important; }
+.cm-cursor { border-left: 2px solid var(--accent2) !important; }
+.cm-matchingBracket { background: rgba(59,130,246,0.2) !important; outline: 1px solid var(--accent) !important; }
 
-/* ── Terminal ── */
+/* Find highlight */
+.cm-searchMatch {
+  background: rgba(251,191,36,0.25) !important;
+  outline: 1px solid rgba(251,191,36,0.5) !important;
+  border-radius: 2px;
+}
+.cm-searchMatch.cm-searchMatch-selected {
+  background: rgba(251,191,36,0.5) !important;
+  outline: 1px solid #fbbf24 !important;
+}
+
+/* ════════════════════════════════════════
+   TERMINAL
+════════════════════════════════════════ */
+#terminal-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+#terminal-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: var(--bg2);
+  gap: 8px;
+  height: 28px;
+  flex-shrink: 0;
+}
+#terminal-header span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text3);
+}
+.terminal-action {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: all 0.1s;
+}
+.terminal-action:hover { background: var(--bg4); color: var(--text2); }
+#terminal-resize {
+  height: 4px;
+  background: transparent;
+  cursor: row-resize;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+#terminal-resize:hover, #terminal-resize.dragging { background: var(--accent); }
 #terminal {
   height: 200px;
-  background: #1e1e1e;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--bg);
+  padding: 0;
+}
+.xterm { padding: 6px 8px; }
+
+/* ════════════════════════════════════════
+   PACKAGE MANAGER MODAL
+════════════════════════════════════════ */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.visible { display: flex; }
+
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+  width: 560px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
-#terminal .xterm { padding: 6px; }
 
-/* ── Utilities ── */
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-shrink: 0;
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.1s;
+}
+.modal-close:hover { color: var(--text); }
+
+/* Tab switcher inside modal */
+.mode-tabs {
+  display: flex;
+  gap: 0;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mode-tab {
+  padding: 8px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text3);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  margin-bottom: -1px;
+}
+.mode-tab:hover { color: var(--text2); }
+.mode-tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+/* Pane visibility */
+.pkg-pane { display: none; flex-direction: column; gap: 12px; }
+.pkg-pane.active { display: flex; }
+
+.input-group { display: flex; gap: 8px; }
+.pkg-input {
+  flex: 1;
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pkg-input:focus { border-color: var(--accent); }
+.pkg-input::placeholder { color: var(--text3); }
+.pkg-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+.pkg-btn:hover { background: var(--accent2); }
+.pkg-btn:disabled { opacity: 0.4; cursor: default; }
+.pkg-btn.secondary {
+  background: var(--bg4);
+  color: var(--text2);
+  border: 1px solid var(--border2);
+}
+.pkg-btn.secondary:hover { background: var(--bg3); color: var(--text); }
+
+.pkg-label {
+  font-size: 12px;
+  color: var(--text3);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.pkg-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text2);
+  min-height: 80px;
+  max-height: 180px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+.pkg-log::-webkit-scrollbar { width: 4px; }
+.pkg-log::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+.pkg-log .log-ok  { color: var(--green); }
+.pkg-log .log-err { color: var(--red); }
+.pkg-log .log-info { color: var(--accent2); }
+.pkg-log .log-warn { color: var(--yellow); }
+
+/* Installed packages list */
+.pkg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.pkg-list::-webkit-scrollbar { width: 4px; }
+.pkg-list::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+.pkg-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg4);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.pkg-item-name { flex: 1; color: var(--text); }
+.pkg-item-version { color: var(--text3); font-size: 11px; }
+.pkg-item-remove {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: color 0.1s;
+}
+.pkg-item-remove:hover { color: var(--red); }
+
+/* GitHub pane extras */
+.github-info {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.github-info strong { color: var(--text); }
+
+.dest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dest-path {
+  flex: 1;
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ════════════════════════════════════════
+   MISC
+════════════════════════════════════════ */
 .hidden { display: none !important; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  z-index: 2000;
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  transition: opacity 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toast.ok::before   { content: '✓'; color: var(--green); }
+.toast.err::before  { content: '✕'; color: var(--red); }
+.toast.info::before { content: '·'; color: var(--accent2); }
+
+/* Context menu */
+.ctx-menu {
+  display: none;
+  position: fixed;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  min-width: 150px;
+}
+.ctx-menu.visible { display: block; }
+.ctx-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text2);
+  transition: background 0.08s, color 0.08s;
+}
+.ctx-item:hover { background: var(--bg4); color: var(--text); }
+.ctx-item.danger:hover { background: rgba(248,113,113,0.12); color: var(--red); }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 4px; }
+
+/* Rename input in tree */
+.tree-rename-input {
+  background: var(--bg4);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  width: 100%;
+  outline: none;
+}
+
+/* Autosave folder indicator */
+#autosave-indicator {
+  font-size: 11px;
+  color: var(--text3);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  height: 100%;
+}
+#autosave-indicator .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text3);
+  transition: background 0.3s;
+}
+#autosave-indicator.active .dot { background: var(--green); }
 </style>
 </head>
 <body>
 
+<!-- ══════════════ MENU BAR ══════════════ -->
 <div id="menubar">
-  <div class="menu">File
+  <span class="logo">CodeIt</span>
+
+  <div class="menu" id="menu-file">
+    <div class="menu-label">File</div>
     <div class="dropdown">
-      <div id="newFile">📄 New File</div>
-      <div id="openFile">📂 Open File</div>
-      <div id="openFolder">🗂 Open Folder</div>
-      <div id="saveAs">💾 Save As</div>
-      <div id="toggleAutosave">🔄 Auto save: OFF</div>
-      <div id="packageProject">📦 Package as .zip</div>
+      <div class="dropdown-item" id="mi-new-file">📄<span>New File</span><span class="shortcut">Ctrl+N</span></div>
+      <div class="dropdown-item" id="mi-new-folder">📁<span>New Folder</span></div>
+      <div class="dropdown-separator"></div>
+      <div class="dropdown-item" id="mi-open-file">📂<span>Open File</span></div>
+      <div class="dropdown-item" id="mi-open-folder">🗂<span>Open Folder</span></div>
+      <div class="dropdown-separator"></div>
+      <div class="dropdown-item" id="mi-save">💾<span>Save</span><span class="shortcut">Ctrl+S</span></div>
+      <div class="dropdown-item" id="mi-save-as">📝<span>Save As</span></div>
+      <div class="dropdown-separator"></div>
+      <div class="dropdown-item" id="mi-autosave">🔄<span id="autosave-label">Auto Save: OFF</span></div>
+      <div class="dropdown-item" id="mi-set-autosave-folder">📌<span>Set AutoSave Folder</span></div>
+      <div class="dropdown-separator"></div>
+      <div class="dropdown-item" id="mi-package-zip">📦<span>Package as .zip</span></div>
     </div>
   </div>
 
-  <div class="menu">Edit
+  <div class="menu" id="menu-edit">
+    <div class="menu-label">Edit</div>
     <div class="dropdown">
-      <div id="undo">↩ Undo  <span style="float:right;color:#888">Ctrl+Z</span></div>
-      <div id="redo">↪ Redo  <span style="float:right;color:#888">Ctrl+Y</span></div>
-      <div id="findReplace">🔍 Find &amp; Replace</div>
-      <div id="packageManager">🐍 Package Manager (pip)</div>
+      <div class="dropdown-item" id="mi-undo">↩<span>Undo</span><span class="shortcut">Ctrl+Z</span></div>
+      <div class="dropdown-item" id="mi-redo">↪<span>Redo</span><span class="shortcut">Ctrl+Y</span></div>
+      <div class="dropdown-separator"></div>
+      <div class="dropdown-item" id="mi-find">🔍<span>Find</span><span class="shortcut">Ctrl+F</span></div>
     </div>
   </div>
 
-  <div class="menu">Python
-    <div class="dropdown" id="pyVersions"></div>
+  <div class="menu" id="menu-packages">
+    <div class="menu-label">Packages</div>
+    <div class="dropdown">
+      <div class="dropdown-item" id="mi-pkg-manager">📦<span>Package Manager</span></div>
+    </div>
   </div>
 
-  <div class="menu">Info
+  <div class="menu" id="menu-python">
+    <div class="menu-label">Python</div>
+    <div class="dropdown" id="py-versions"></div>
+  </div>
+
+  <div class="menu" id="menu-info">
+    <div class="menu-label">Info</div>
     <div class="dropdown">
-      <div id="about">ℹ About</div>
-      <div id="support">🌐 Browser Support</div>
+      <div class="dropdown-item" id="mi-about">ℹ<span>About</span></div>
+      <div class="dropdown-item" id="mi-support">🌐<span>Browser Support</span></div>
     </div>
+  </div>
+
+  <div id="autosave-indicator" title="Autosave status">
+    <div class="dot"></div>
+    <span id="autosave-status-text">Autosave off</span>
   </div>
 </div>
 
+<!-- ══════════════ MAIN ══════════════ -->
 <div id="main">
+
+  <!-- Sidebar -->
   <div id="sidebar">
-    <b>Explorer</b>
-    <div id="fileList"></div>
+    <div id="sidebar-header">
+      <span>Explorer</span>
+      <div id="sidebar-actions">
+        <button class="sidebar-btn" id="btn-new-file" title="New File">+</button>
+        <button class="sidebar-btn" id="btn-new-folder" title="New Folder">📁</button>
+        <button class="sidebar-btn" id="btn-open-folder" title="Open Folder">🗂</button>
+      </div>
+    </div>
+    <div id="folder-root-bar">
+      <span>📂</span>
+      <span class="folder-root-name" id="folder-root-name">No folder open</span>
+      <button id="btn-change-folder">Open</button>
+    </div>
+    <div id="file-tree"></div>
   </div>
 
-  <div id="editorArea">
+  <!-- Resize handle -->
+  <div id="sidebar-resize"></div>
+
+  <!-- Editor area -->
+  <div id="editor-area">
     <div id="tabs"></div>
 
-    <div id="editorWrap">
-      <textarea id="editor"></textarea>
+    <!-- Find bar -->
+    <div id="find-bar">
+      <input id="find-input" type="text" placeholder="Find…" autocomplete="off" spellcheck="false"/>
+      <span class="find-info" id="find-info"></span>
+      <button class="find-btn" id="find-prev">↑ Prev</button>
+      <button class="find-btn" id="find-next">↓ Next</button>
+      <button id="find-close">×</button>
     </div>
 
-    <div id="terminal"></div>
+    <!-- Editor -->
+    <div id="editor-wrap">
+      <div id="cm-editor"></div>
+    </div>
+
+    <!-- Terminal -->
+    <div id="terminal-wrap">
+      <div id="terminal-resize"></div>
+      <div id="terminal-header">
+        <span>Terminal</span>
+        <button class="terminal-action" id="btn-term-clear">Clear</button>
+        <button class="terminal-action" id="btn-term-kill" title="Kill process">■ Stop</button>
+      </div>
+      <div id="terminal"></div>
+    </div>
   </div>
 </div>
 
-<!-- xterm.js -->
+<!-- ══════════════ PACKAGE MANAGER MODAL ══════════════ -->
+<div class="modal-overlay" id="pkg-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">📦 Package Manager</span>
+      <button class="modal-close" id="pkg-modal-close">×</button>
+    </div>
+    <div class="mode-tabs">
+      <div class="mode-tab active" data-pane="pip">🐍 Pip (Python)</div>
+      <div class="mode-tab" data-pane="github">🐙 GitHub</div>
+    </div>
+    <div class="modal-body">
+
+      <!-- PIP PANE -->
+      <div class="pkg-pane active" id="pane-pip">
+        <div>
+          <div class="pkg-label">Install Package</div>
+          <div class="input-group">
+            <input class="pkg-input" id="pip-input" type="text" placeholder="numpy, requests==2.31, …" autocomplete="off"/>
+            <button class="pkg-btn" id="pip-install-btn">Install</button>
+          </div>
+        </div>
+        <div>
+          <div class="pkg-label">Installed Packages</div>
+          <div class="pkg-list" id="pip-installed-list">
+            <div style="color:var(--text3);font-size:12px;padding:6px 10px;">Run a Python file to populate this list.</div>
+          </div>
+        </div>
+        <div>
+          <div class="pkg-label">Log</div>
+          <div class="pkg-log" id="pip-log"><span class="log-info">Ready. Enter a package name to install.</span></div>
+        </div>
+      </div>
+
+      <!-- GITHUB PANE -->
+      <div class="pkg-pane" id="pane-github">
+        <div class="github-info">
+          Enter a GitHub repository URL or <strong>user/repo</strong> shorthand.<br>
+          Files will be fetched via the GitHub API and added to your project.
+        </div>
+        <div>
+          <div class="pkg-label">Repository</div>
+          <div class="input-group">
+            <input class="pkg-input" id="gh-input" type="text" placeholder="user/repo  or  https://github.com/user/repo" autocomplete="off"/>
+          </div>
+        </div>
+        <div>
+          <div class="pkg-label">Branch</div>
+          <div class="input-group">
+            <input class="pkg-input" id="gh-branch" type="text" placeholder="main" value="main" style="max-width:140px"/>
+          </div>
+        </div>
+        <div>
+          <div class="pkg-label">Download to</div>
+          <div class="dest-row">
+            <div class="dest-path" id="gh-dest-path">Browser (in-memory)</div>
+            <button class="pkg-btn secondary" id="gh-pick-folder">📁 Choose Folder</button>
+          </div>
+        </div>
+        <div class="input-group">
+          <button class="pkg-btn" id="gh-fetch-btn" style="flex:1">🐙 Fetch Repository</button>
+        </div>
+        <div>
+          <div class="pkg-label">Log</div>
+          <div class="pkg-log" id="gh-log"><span class="log-info">Enter a repo and press Fetch.</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-item" id="ctx-rename">Rename</div>
+  <div class="ctx-item" id="ctx-new-file">New File Here</div>
+  <div class="ctx-item" id="ctx-new-folder">New Folder Here</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" id="ctx-delete">Delete</div>
+</div>
+
+<!-- xterm -->
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<!-- JSZip (lazy loaded) -->
 
-<!-- CodeMirror core + modes (load ONCE) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
-
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
