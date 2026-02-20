@@ -36,11 +36,39 @@ term.onData(data => {
   worker.postMessage({type:"input", text:data});
 });
 
-function runCurrent(){
+async function runCurrent(){
   const f = getCurrentFile();
   if(!f) return;
-  terminal.textContent="";
-  worker.postMessage({type:"run", code:f.content});
+
+  terminalEl.innerHTML = ""; // clear terminal
+
+  const lang = langSelect.value;
+
+  if(lang === "Python"){
+    worker.postMessage({type:"run", code:f.content});
+  } else {
+    termWrite("Building "+lang+" code on server...");
+
+    // Send code to server API for compilation
+    const res = await fetch("/build", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({lang, code:f.content})
+    });
+
+    const data = await res.json();
+    if(data.error){
+      termWrite("Build failed:\n"+data.error);
+      return;
+    }
+
+    // Server returns executable path
+    const exe = data.executable;
+
+    termWrite("Running executable in temp account...");
+    await fetch("/run", {method:"POST", body: JSON.stringify({exe})});
+    termWrite("Execution finished.");
+  }
 }
 
 //// ===== PROJECT DATA =====
@@ -89,13 +117,20 @@ function openTab(name){
 }
 
 function activateTab(name){
-  current=name;
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  const tab=[...tabsEl.children].find(t=>t.dataset.name===name);
+  current = name;
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  const tab = [...tabsEl.children].find(t => t.dataset.name === name);
   if(tab) tab.classList.add("active");
 
-  const f=files.get(name);
-  editor.setValue(f.content || "");
+  if(name === "Run"){
+    document.getElementById("editorWrap").classList.add("hidden");
+    terminalEl.style.flex = "1";
+  } else {
+    const f = files.get(name);
+    editor.setValue(f.content || "");
+    document.getElementById("editorWrap").classList.remove("hidden");
+    terminalEl.style.flex = "";
+  }
 }
 
 function closeTab(name){
@@ -203,12 +238,35 @@ support.onclick=()=>{
   alert("Supports: Chrome. Doesnt support: Firefox.")
 }
 
-//// ===== PYTHON MENU =====
-const runBtn=document.createElement("div");
-runBtn.textContent="Run ▶";
-runBtn.onclick=runCurrent;
-pyVersions.appendChild(runBtn);
+//// ===== RUN TAB =====
+const runTab = document.createElement("div");
+runTab.className = "tab";
+runTab.dataset.name = "Run";
 
+const runTitle = document.createElement("span");
+runTitle.textContent = "Run ▶";
+
+runTab.append(runTitle);
+runTab.onclick = () => activateTab("Run");
+
+tabsEl.appendChild(runTab);
+
+// Create language dropdown in the Run tab
+const langSelect = document.createElement("select");
+["Python","C","C++"].forEach(l => {
+  const opt = document.createElement("option");
+  opt.value = l;
+  opt.textContent = l;
+  langSelect.appendChild(opt);
+});
+runTab.appendChild(langSelect);
+
+const runBtn = document.createElement("div");
+runBtn.textContent = "Run ▶";
+runBtn.onclick = runCurrent;
+runTab.appendChild(runBtn);
+
+//// ===== PYTHON MENU =====
 ["0.27.2","0.26.4","0.25.1","0.24.1","0.23.4","0.22.1"]
 .forEach(v=>{
   const d=document.createElement("div");
