@@ -1,5 +1,5 @@
 # CodeIt IDE 
-![CodeIt Icon](favicon.ico)
+![CodeIt Icon](Logo.png)
 
 A Client only code editor that uses pyodide to run python, basically a local web editor for python.
 Although it does need python on the client to run the `luanch.py` script.
