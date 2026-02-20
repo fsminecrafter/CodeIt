@@ -9,8 +9,13 @@ document.querySelectorAll(".menu").forEach(menu=>{
 document.body.onclick=()=> document.querySelectorAll(".menu").forEach(m=>m.classList.remove("open"));
 
 //// ===== TERMINAL =====
-const terminal = document.getElementById("terminal");
-function term(t){ terminal.textContent += t + "\n"; terminal.scrollTop = terminal.scrollHeight; }
+const terminalEl = document.getElementById("terminal");
+const term = new Terminal({cols:80, rows:20, theme:{background:'#1e1e1e', foreground:'#ffffff'}});
+term.open(terminalEl);
+term.focus();
+
+// Scroll helper (optional)
+function termWrite(text){ term.writeln(text); }
 
 //// ===== EDITOR =====
 const editor = CodeMirror.fromTextArea(document.getElementById("editor"),{
@@ -23,9 +28,13 @@ let worker=createWorker();
 
 function createWorker(){ return new Worker("worker.js?v="+pyVersion); }
 
-worker.onmessage=e=>{
-  if(e.data.type==="output") term(e.data.text);
+worker.onmessage = e => {
+  if(e.data.type === "output") termWrite(e.data.text);
 };
+
+term.onData(data => {
+  worker.postMessage({type:"input", text:data});
+});
 
 function runCurrent(){
   const f = getCurrentFile();
@@ -193,7 +202,6 @@ about.onclick=()=>{
 support.onclick=()=>{
   alert("Supports: Chrome. Doesnt support: Firefox.")
 }
-
 
 //// ===== PYTHON MENU =====
 const runBtn=document.createElement("div");
