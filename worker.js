@@ -5,10 +5,23 @@ async function load() {
 
   importScripts(`https://cdn.jsdelivr.net/pyodide/v${v}/full/pyodide.js`);
 
-  pyodide = await loadPyodide({
-    stdout: text => self.postMessage({ type: "output", text }),
-    stderr: text => self.postMessage({ type: "output", text })
-  });
+  pyodide = await loadPyodide();
+
+  // Redirect stdout & stderr manually (bulletproof method)
+  pyodide.runPython(`
+import sys
+from js import self
+
+class Writer:
+    def write(self, s):
+        if s.strip() != "":
+            self.postMessage({"type": "output", "text": s})
+    def flush(self):
+        pass
+
+sys.stdout = Writer()
+sys.stderr = Writer()
+`);
 
   self.postMessage({ type: "output", text: "Pyodide " + v + " ready" });
 }
@@ -20,18 +33,10 @@ self.onmessage = async e => {
 
   if (!pyodide) return;
 
-  //// ===== RUN CODE =====
+  //// RUN CODE
   if (type === "run") {
     try {
-      const result = await pyodide.runPythonAsync(code);
-
-      if (result !== undefined) {
-        self.postMessage({
-          type: "output",
-          text: String(result)
-        });
-      }
-
+      await pyodide.runPythonAsync(code);
     } catch (err) {
       self.postMessage({
         type: "output",
@@ -40,11 +45,10 @@ self.onmessage = async e => {
     }
   }
 
-  //// ===== INSTALL PACKAGE =====
+  //// INSTALL PACKAGE
   if (type === "install") {
     try {
       await pyodide.loadPackage("micropip");
-
       const micropip = pyodide.pyimport("micropip");
       await micropip.install(pkg);
 
