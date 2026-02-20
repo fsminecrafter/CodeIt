@@ -4,14 +4,13 @@
 
 import { EditorView, keymap, highlightActiveLine, lineNumbers,
          highlightActiveLineGutter, drawSelection, dropCursor,
-         rectangularSelection, crosshairCursor, ViewUpdate } from "@codemirror/view";
-import { EditorState, StateEffect, StateField, RangeSetBuilder, Compartment } from "@codemirror/state";
+         rectangularSelection, crosshairCursor } from "@codemirror/view";
+import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
 import { searchKeymap, highlightSelectionMatches, SearchQuery,
-         setSearchQuery, findNext, findPrevious, getSearchQuery,
-         SearchCursor } from "@codemirror/search";
+         setSearchQuery, findNext, findPrevious } from "@codemirror/search";
 import { indentOnInput, bracketMatching, foldGutter,
-         syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from "@codemirror/language";
+         syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap, autocompletion,
          completionKeymap } from "@codemirror/autocomplete";
 import { lintKeymap } from "@codemirror/lint";
@@ -23,7 +22,6 @@ import { css }        from "@codemirror/lang-css";
 import { json }       from "@codemirror/lang-json";
 import { markdown }   from "@codemirror/lang-markdown";
 import { oneDark }    from "@codemirror/theme-one-dark";
-import { tags }       from "@lezer/highlight";
 
 // ─── Compartments (reconfigurable extensions) ───────────────
 const langCompartment = new Compartment();
@@ -83,14 +81,16 @@ function buildEditorExtensions(langExt) {
 
 function initEditor() {
   const container = document.getElementById("cm-editor");
-  container.style.height = "100%";
 
   const startState = EditorState.create({
     doc: '',
     extensions: buildEditorExtensions(python())
   });
 
-  editorView = new EditorView({ state: startState, parent: container });
+  editorView = new EditorView({
+    state: startState,
+    parent: container
+  });
 }
 
 function setEditorContent(content, langExt) {
