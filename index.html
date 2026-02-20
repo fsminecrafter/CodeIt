@@ -9,8 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap" rel="stylesheet">
 
 <link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.1/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.1/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 
 <style>
 :root{
@@ -22,6 +22,8 @@
   --text:#d4d4d4;
 }
 
+*{ box-sizing: border-box; }
+
 body{
   margin:0;
   height:100vh;
@@ -30,6 +32,7 @@ body{
   background:var(--bg);
   color:var(--text);
   font-family:system-ui;
+  overflow:hidden;
 }
 
 #menubar{
@@ -40,9 +43,10 @@ body{
   border-bottom:1px solid var(--border);
   font-family:"Google Sans", monospace;
   z-index:200;
+  flex-shrink:0;
 }
 
-.menu{ position:relative; cursor:pointer; }
+.menu{ position:relative; cursor:pointer; user-select:none; }
 .menu:hover{ color:white; }
 
 .dropdown{
@@ -53,15 +57,16 @@ body{
   background:var(--panel);
   border:1px solid var(--border);
   min-width:200px;
-  z-index:100;
+  z-index:300;
 }
 
 .dropdown div{
-  padding:8px;
+  padding:8px 12px;
   cursor:pointer;
+  white-space:nowrap;
 }
 
-.dropdown div:hover{ background:var(--accent); }
+.dropdown div:hover{ background:var(--accent); color:white; }
 
 .menu.open .dropdown{ display:block; }
 
@@ -69,7 +74,6 @@ body{
   flex:1;
   display:flex;
   overflow:hidden;
-  height: calc(100vh - 40px);
 }
 
 #sidebar{
@@ -79,6 +83,16 @@ body{
   padding:8px;
   overflow:auto;
   font-family:"Google Sans", monospace;
+  flex-shrink:0;
+}
+
+#sidebar b {
+  display:block;
+  margin-bottom:6px;
+  color:#ccc;
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:0.05em;
 }
 
 #editorArea{
@@ -86,51 +100,85 @@ body{
   display:flex;
   flex-direction:column;
   overflow:hidden;
+  min-width:0;
 }
 
 #tabs{
   display:flex;
   background:var(--panel);
   border-bottom:1px solid var(--border);
+  flex-shrink:0;
+  overflow-x:auto;
+  align-items:stretch;
 }
 
 .tab{
-  padding:8px 14px;
+  padding:6px 14px;
   cursor:pointer;
   border-right:1px solid var(--border);
   display:flex;
-  gap:8px;
+  gap:6px;
   align-items:center;
+  white-space:nowrap;
+  font-size:13px;
+  flex-shrink:0;
 }
 
-.tab.active{ background:var(--bg); }
+.tab.active{ background:var(--bg); border-bottom:2px solid var(--accent); }
+.tab:hover:not(.active){ background:#2a2a2a; }
 
 #editorWrap{
   flex:1;
   display:flex;
   overflow:hidden;
+  min-height:0;
 }
 
 .editorPane{
   flex:1;
   display:flex;
   flex-direction:column;
+  min-height:0;
 }
 
-.CodeMirror{ height:100%; flex:1; }
+.CodeMirror{
+  height:100% !important;
+  flex:1;
+  font-size:14px;
+  font-family:'Fira Code', 'Consolas', monospace;
+}
+
+.CodeMirror-scroll{ height:100%; }
 
 #terminal{
-  height:180px;
-  background:black;
-  color:#0f0;
-  font-family:monospace;
-  overflow:auto;
-  resize:vertical;
+  height:200px;
+  min-height:100px;
+  background:#1e1e1e;
   border-top:1px solid var(--border);
+  flex-shrink:0;
+  resize:vertical;
+  overflow:hidden;
 }
-.fileItem{ cursor:pointer; padding:4px; }
-.fileItem:hover{ background:var(--accent); }
-.hidden{ display:none; }
+
+.fileItem{
+  cursor:pointer;
+  padding:4px 6px;
+  border-radius:3px;
+  font-size:13px;
+}
+.fileItem:hover{ background:var(--accent); color:white; }
+
+.hidden{ display:none !important; }
+
+#runTab select {
+  margin-left:8px;
+  background:var(--panel2);
+  color:var(--text);
+  border:1px solid var(--border);
+  padding:2px 4px;
+  border-radius:3px;
+  font-size:12px;
+}
 </style>
 </head>
 
@@ -152,7 +200,7 @@ body{
     <div class="dropdown">
       <div id="undo">Undo</div>
       <div id="redo">Redo</div>
-      <div id="findReplace">Find & Replace</div>
+      <div id="findReplace">Find &amp; Replace</div>
       <div id="packageManager">Package Manager</div>
     </div>
   </div>
@@ -191,11 +239,14 @@ body{
 
 </div>
 
+<!-- xterm -->
 <script src="https://unpkg.com/xterm/lib/xterm.js"></script>
+
+<!-- CodeMirror (load ONCE, correct version) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+
 <script src="app.js"></script>
 </body>
 </html>
