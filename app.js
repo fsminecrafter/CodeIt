@@ -19,8 +19,11 @@ function termWrite(text){ term.writeln(text); }
 
 //// ===== EDITOR =====
 const editor = CodeMirror.fromTextArea(document.getElementById("editor"),{
-  mode:"python", theme:"material-darker", lineNumbers:true
+  mode:"python",
+  theme:"material-darker",
+  lineNumbers:true
 });
+editor.on("change",()=>{ const f=getCurrentFile(); if(f) f.content=editor.getValue(); });
 
 //// ===== PYODIDE WORKER =====
 let pyVersion="0.27.2";
@@ -239,31 +242,18 @@ support.onclick=()=>{
 }
 
 //// ===== RUN TAB =====
-const runTab = document.createElement("div");
-runTab.className = "tab";
-runTab.dataset.name = "Run";
-
-const runTitle = document.createElement("span");
-runTitle.textContent = "Run ▶";
-
+const runTab=document.createElement("div");
+runTab.className="tab"; runTab.dataset.name="Run";
+const runTitle=document.createElement("span"); runTitle.textContent="Run ▶";
 runTab.append(runTitle);
-runTab.onclick = () => activateTab("Run");
-
+runTab.onclick=()=>activateTab("Run");
 tabsEl.appendChild(runTab);
 
-// Create language dropdown in the Run tab
-const langSelect = document.createElement("select");
-["Python","C","C++"].forEach(l => {
-  const opt = document.createElement("option");
-  opt.value = l;
-  opt.textContent = l;
-  langSelect.appendChild(opt);
-});
+const langSelect=document.createElement("select");
+["Python","C","C++"].forEach(l=>{ const opt=document.createElement("option"); opt.value=l; opt.textContent=l; langSelect.appendChild(opt); });
 runTab.appendChild(langSelect);
 
-const runBtn = document.createElement("div");
-runBtn.textContent = "Run ▶";
-runBtn.onclick = runCurrent;
+const runBtn=document.createElement("div"); runBtn.textContent="Run ▶"; runBtn.onclick=runCurrent;
 runTab.appendChild(runBtn);
 
 //// ===== PYTHON MENU =====
