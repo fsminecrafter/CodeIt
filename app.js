@@ -185,6 +185,16 @@ packageManager.onclick=()=>{
   if(pkg) worker.postMessage({type:"install", package:pkg});
 };
 
+//// Uhh info
+about.onclick=()=>{
+  alert("Made by Fsminecrafter (:");
+}
+
+support.onclick=()=>{
+  alert("Supports: Chrome. Doesnt support: Firefox.")
+}
+
+
 //// ===== PYTHON MENU =====
 const runBtn=document.createElement("div");
 runBtn.textContent="Run ▶";
