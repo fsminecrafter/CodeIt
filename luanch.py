@@ -1,25 +1,68 @@
 """
-CodeIt IDE — launch.py  (HTTPS)
+CodeIt IDE — launch.py  (HTTPS + LAN + C/C++ Sandbox)
 
-Auto-generates a self-signed cert for localhost on first run,
-then serves over https://localhost:8443.
+• Binds to 0.0.0.0 so all LAN devices can connect.
+• Auto-generates a self-signed cert covering localhost + all current LAN IPs.
+  Cert is regenerated automatically when LAN IPs change.
+• C/C++ runs inside a temporary system user (codeit_XXXXXXXX) for sandboxing:
+    1. User is created with useradd
+    2. Sandbox files are copied into the run directory and chowned to the user
+    3. Executable runs as that user via runuser
+    4. User and home dir are deleted on completion / server exit
+  Falls back to normal execution on Windows or non-root Linux.
+• /build endpoint accepts sandbox_files: {filename: content} to pre-populate
+  the run directory before execution.
 
-First launch only: Chrome shows a security warning.
-  Click "Advanced" → "Proceed to localhost (unsafe)"
+First launch: Chrome shows a security warning once per browser profile.
+  Click "Advanced" → "Proceed to … (unsafe)"
+  LAN devices need to visit the Network URL shown on startup.
 
 Requires:  pip install cryptography
 """
 
 import http.server, socketserver, ssl, webbrowser
-import os, json, tempfile, subprocess, shutil, pathlib, datetime, ipaddress
+import os, json, tempfile, subprocess, shutil, pathlib
+import datetime, ipaddress, socket, threading, uuid, atexit, signal
 
-PORT     = 8000
+PORT     = 8443
 BASE_DIR = pathlib.Path(__file__).parent.resolve()
 os.chdir(BASE_DIR)
 
 CERT_FILE = BASE_DIR / "cert.pem"
 KEY_FILE  = BASE_DIR / "key.pem"
 
+IS_LINUX_ROOT = (os.name == "posix" and os.getuid() == 0
+                 and shutil.which("useradd") is not None
+                 and shutil.which("runuser") is not None)
+
+# ── LAN IP detection ──────────────────────────────────────────────────────────
+
+def get_lan_ips():
+    ips = set()
+    # Primary interface
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if not ip.startswith("127."):
+            ips.add(ip)
+    except Exception:
+        pass
+    # All interfaces via hostname
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127."):
+                ips.add(ip)
+    except Exception:
+        pass
+    return sorted(ips)
+
+
+LAN_IPS = get_lan_ips()
+
+# ── Certificate ───────────────────────────────────────────────────────────────
 
 def make_cert():
     try:
@@ -28,23 +71,28 @@ def make_cert():
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
 
-        print("Generating self-signed certificate for localhost …")
+        sans = [x509.DNSName("localhost"),
+                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1"))]
+        for ip in LAN_IPS:
+            try:
+                sans.append(x509.IPAddress(ipaddress.IPv4Address(ip)))
+            except Exception:
+                pass
+
+        lan_str = ", ".join(LAN_IPS) or "none"
+        print(f"  Generating cert for localhost + LAN IPs ({lan_str}) …")
+
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        name = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "CodeIt IDE"),
-        ])
-        now = datetime.datetime.now(datetime.timezone.utc)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "CodeIt IDE")])
+        now  = datetime.datetime.now(datetime.timezone.utc)
+
         cert = (x509.CertificateBuilder()
             .subject_name(name).issuer_name(name)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
             .not_valid_before(now)
             .not_valid_after(now + datetime.timedelta(days=3650))
-            .add_extension(x509.SubjectAlternativeName([
-                x509.DNSName("localhost"),
-                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-            ]), critical=False)
+            .add_extension(x509.SubjectAlternativeName(sans), critical=False)
             .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
             .sign(key, hashes.SHA256()))
 
@@ -53,34 +101,112 @@ def make_cert():
             serialization.Encoding.PEM,
             serialization.PrivateFormat.TraditionalOpenSSL,
             serialization.NoEncryption()))
-        print(f"  cert.pem + key.pem written to {BASE_DIR}\n")
+        print("  cert.pem + key.pem written.\n")
 
     except ImportError:
-        print("cryptography not found, trying openssl CLI …")
+        print("  cryptography not found, trying openssl …")
+        altnames = "DNS:localhost,IP:127.0.0.1" + "".join(f",IP:{ip}" for ip in LAN_IPS)
         try:
             subprocess.run([
                 "openssl", "req", "-x509", "-newkey", "rsa:2048",
                 "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),
-                "-days", "3650", "-nodes", "-subj", "/CN=localhost",
-                "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"
+                "-days", "3650", "-nodes", "-subj", "/CN=CodeIt IDE",
+                "-addext", f"subjectAltName={altnames}"
             ], check=True, capture_output=True)
-            print("  cert.pem + key.pem written via openssl\n")
+            print("  cert.pem + key.pem written.\n")
         except Exception as e:
             print(f"ERROR: Cannot generate certificate: {e}")
             print("Run:  pip install cryptography")
             raise SystemExit(1)
 
 
-if not CERT_FILE.exists() or not KEY_FILE.exists():
+def cert_needs_regen():
+    if not CERT_FILE.exists() or not KEY_FILE.exists():
+        return True
+    if not LAN_IPS:
+        return False
+    try:
+        from cryptography import x509
+        cert = x509.load_pem_x509_certificate(CERT_FILE.read_bytes())
+        san  = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        existing = {str(v) for v in san.value.get_values_for_type(x509.IPAddress)}
+        return any(ip not in existing for ip in LAN_IPS)
+    except Exception:
+        return True
+
+
+if cert_needs_regen():
     make_cert()
 
+# ── Sandbox user management ───────────────────────────────────────────────────
+
+_sandbox_lock  = threading.Lock()
+_active_users  = set()
+
+
+def create_sandbox_user():
+    if not IS_LINUX_ROOT:
+        return None
+    username = "codeit_" + uuid.uuid4().hex[:8]
+    try:
+        subprocess.run(
+            ["useradd", "--create-home", "--shell", "/bin/sh",
+             "--comment", "CodeIt sandbox (temporary)", username],
+            check=True, capture_output=True
+        )
+        with _sandbox_lock:
+            _active_users.add(username)
+        return username
+    except subprocess.CalledProcessError:
+        return None
+
+
+def delete_sandbox_user(username):
+    if not username:
+        return
+    try:
+        subprocess.run(["pkill", "-u", username], capture_output=True)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["userdel", "-r", "-f", username], capture_output=True)
+    except Exception:
+        pass
+    with _sandbox_lock:
+        _active_users.discard(username)
+
+
+def cleanup_all():
+    with _sandbox_lock:
+        users = list(_active_users)
+    for u in users:
+        delete_sandbox_user(u)
+
+
+atexit.register(cleanup_all)
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        _orig = signal.getsignal(_sig)
+        def _h(signum, frame, orig=_orig):
+            cleanup_all()
+            if callable(orig):
+                orig(signum, frame)
+            raise SystemExit(0)
+        signal.signal(_sig, _h)
+    except Exception:
+        pass
+
+# ── MIME types ────────────────────────────────────────────────────────────────
+
 MIME = {
-    ".js": "application/javascript", ".mjs": "application/javascript",
-    ".css": "text/css", ".html": "text/html", ".json": "application/json",
-    ".wasm": "application/wasm", ".ico": "image/x-icon",
-    ".py": "text/plain", ".txt": "text/plain", ".md": "text/plain",
+    ".js":   "application/javascript",  ".mjs": "application/javascript",
+    ".css":  "text/css",                ".html": "text/html",
+    ".json": "application/json",        ".wasm": "application/wasm",
+    ".ico":  "image/x-icon",            ".py":   "text/plain",
+    ".txt":  "text/plain",              ".md":   "text/plain",
 }
 
+# ── Request handler ───────────────────────────────────────────────────────────
 
 class IDEHandler(http.server.SimpleHTTPRequestHandler):
 
@@ -89,8 +215,6 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
         return MIME.get(ext, super().guess_type(path))
 
     def end_headers(self):
-        # COOP/COEP required for SharedArrayBuffer (Pyodide threads)
-        # Also enables File System Access API from https://localhost
         self.send_header("Cross-Origin-Opener-Policy",   "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         self.send_header("Access-Control-Allow-Origin",  "*")
@@ -125,11 +249,15 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "Invalid JSON"})
             return
 
+        # ── /build ── compile + set up sandbox run directory ─────────────────
         if self.path == "/build":
-            lang = data.get("lang", "")
-            code = data.get("code", "")
+            lang          = data.get("lang", "")
+            code          = data.get("code", "")
+            # Dict of {filename: file_content_string} to pre-populate in rundir
+            sandbox_files = data.get("sandbox_files", {})
+
             if lang not in ("C", "C++"):
-                self.send_json(400, {"error": f"Unsupported: {lang}"}); return
+                self.send_json(400, {"error": f"Unsupported language: {lang}"}); return
 
             ext, cc = ("c", "gcc") if lang == "C" else ("cpp", "g++")
             if not shutil.which(cc):
@@ -139,36 +267,111 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
                     "macOS : brew install gcc\n"
                     "Windows: https://winlibs.com"}); return
 
-            tmpdir   = tempfile.mkdtemp(prefix="codeit_")
-            src_file = os.path.join(tmpdir, f"main.{ext}")
-            exe_file = os.path.join(tmpdir, "main.exe" if os.name == "nt" else "main.out")
-            with open(src_file, "w", encoding="utf-8") as f:
-                f.write(code)
-            r = subprocess.run([cc, src_file, "-o", exe_file, "-Wall"], capture_output=True, text=True)
-            if r.returncode != 0:
-                shutil.rmtree(tmpdir, ignore_errors=True)
-                self.send_json(200, {"error": r.stderr or r.stdout})
-            else:
-                self.send_json(200, {"executable": exe_file})
+            # Build in a temp dir
+            builddir = tempfile.mkdtemp(prefix="codeit_build_")
+            src_file = os.path.join(builddir, f"main.{ext}")
+            exe_tmp  = os.path.join(builddir, "main.out")
 
-        elif self.path == "/run":
-            exe = data.get("exe", "")
-            if not exe or not os.path.isfile(exe):
-                self.send_json(400, {"stdout": "", "stderr": "Executable not found", "exit_code": -1}); return
-            if os.name == "posix":
-                os.chmod(exe, 0o755)
             try:
-                r = subprocess.run([exe], capture_output=True, text=True,
-                                   timeout=15, cwd=os.path.dirname(exe))
-                self.send_json(200, {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode})
-            except subprocess.TimeoutExpired:
-                self.send_json(200, {"stdout": "", "stderr": "Timed out (15s).", "exit_code": -1})
-            except Exception as e:
-                self.send_json(200, {"stdout": "", "stderr": str(e), "exit_code": -1})
+                with open(src_file, "w", encoding="utf-8") as f:
+                    f.write(code)
+                r = subprocess.run(
+                    [cc, src_file, "-o", exe_tmp, "-Wall"],
+                    capture_output=True, text=True
+                )
+                if r.returncode != 0:
+                    self.send_json(200, {"error": r.stderr or r.stdout})
+                    return
+
+                # Separate run directory (sandbox user will own this)
+                rundir   = tempfile.mkdtemp(prefix="codeit_run_")
+                exe_dest = os.path.join(rundir, "main.out")
+                shutil.copy2(exe_tmp, exe_dest)
+
+                # Write sandbox files
+                for fname, content in sandbox_files.items():
+                    safe = os.path.basename(fname)
+                    if not safe:
+                        continue
+                    dest = os.path.join(rundir, safe)
+                    try:
+                        with open(dest, "w", encoding="utf-8", errors="replace") as fh:
+                            fh.write(content)
+                    except Exception:
+                        pass
+
+                # Make rundir world-readable/executable so sandbox user can enter
+                if os.name == "posix":
+                    os.chmod(rundir,   0o755)
+                    os.chmod(exe_dest, 0o755)
+
+                self.send_json(200, {
+                    "executable":    exe_dest,
+                    "rundir":        rundir,
+                    "sandbox_files": list(sandbox_files.keys()),
+                })
             finally:
-                d = os.path.dirname(exe)
-                if d.startswith(tempfile.gettempdir()):
-                    shutil.rmtree(d, ignore_errors=True)
+                shutil.rmtree(builddir, ignore_errors=True)
+
+        # ── /run ── execute binary (optionally as sandbox user) ───────────────
+        elif self.path == "/run":
+            exe    = data.get("exe", "")
+            rundir = data.get("rundir", "")
+
+            if not exe or not os.path.isfile(exe):
+                self.send_json(400, {
+                    "stdout": "", "stderr": "Executable not found", "exit_code": -1
+                }); return
+
+            if not rundir or not os.path.isdir(rundir):
+                rundir = os.path.dirname(exe)
+
+            sandbox_user = create_sandbox_user()
+
+            try:
+                if sandbox_user:
+                    # Hand ownership to sandbox user
+                    subprocess.run(
+                        ["chown", "-R", f"{sandbox_user}:{sandbox_user}", rundir],
+                        capture_output=True
+                    )
+                    cmd = ["runuser", "-u", sandbox_user, "--", exe]
+                else:
+                    if os.name == "posix":
+                        os.chmod(exe, 0o755)
+                    cmd = [exe]
+
+                r = subprocess.run(
+                    cmd, capture_output=True, text=True,
+                    timeout=15, cwd=rundir
+                )
+                if sandbox_user:
+                    sandbox_note = f"sandboxed as {sandbox_user}"
+                elif IS_LINUX_ROOT:
+                    sandbox_note = "sandbox user creation failed"
+                else:
+                    sandbox_note = "no sandbox (needs Linux + root)"
+
+                self.send_json(200, {
+                    "stdout":    r.stdout,
+                    "stderr":    r.stderr,
+                    "exit_code": r.returncode,
+                    "sandbox":   sandbox_note,
+                })
+            except subprocess.TimeoutExpired:
+                self.send_json(200, {
+                    "stdout": "", "stderr": "Timed out (15 s).",
+                    "exit_code": -1, "sandbox": ""
+                })
+            except Exception as e:
+                self.send_json(200, {
+                    "stdout": "", "stderr": str(e),
+                    "exit_code": -1, "sandbox": ""
+                })
+            finally:
+                delete_sandbox_user(sandbox_user)
+                if rundir.startswith(tempfile.gettempdir()):
+                    shutil.rmtree(rundir, ignore_errors=True)
 
         else:
             self.send_json(404, {"error": f"Unknown endpoint: {self.path}"})
@@ -178,23 +381,36 @@ class ReusingServer(socketserver.TCPServer):
     allow_reuse_address = True
 
 
-with ReusingServer(("", PORT), IDEHandler) as httpd:
+# ── Start server ──────────────────────────────────────────────────────────────
+
+with ReusingServer(("0.0.0.0", PORT), IDEHandler) as httpd:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=str(CERT_FILE), keyfile=str(KEY_FILE))
     httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
 
-    url = f"https://localhost:{PORT}"
-    print("┌────────────────────────────────────────────┐")
-    print(f"│  CodeIt IDE  ▶  {url}    │")
-    print("└────────────────────────────────────────────┘")
-    print("  Python  →  Pyodide (in-browser)")
-    print("  C/C++   →  gcc/g++ via this server")
+    local_url = f"https://localhost:{PORT}"
+    width = 57
+
     print()
-    print("  ⚠  First launch: Chrome shows a security warning.")
-    print('     Click "Advanced" → "Proceed to localhost (unsafe)"')
-    print("     This only appears once per browser profile.")
+    print("┌" + "─" * width + "┐")
+    print("│  CodeIt IDE" + " " * (width - 12) + "│")
+    print(f"│  Local   ▶  {local_url:<{width-14}}│")
+    for ip in LAN_IPS:
+        lan_url = f"https://{ip}:{PORT}"
+        print(f"│  Network ▶  {lan_url:<{width-14}}│")
+    if not LAN_IPS:
+        print(f"│  Network ▶  {'(no LAN interfaces detected)':<{width-14}}│")
+    print("└" + "─" * width + "┘")
+    print()
+    print("  Python →  Pyodide (in-browser, no server needed)")
+    sandbox_status = "YES — temporary user per run" if IS_LINUX_ROOT else "NO  — needs Linux + root"
+    print(f"  C/C++  →  gcc/g++ sandbox: {sandbox_status}")
+    print()
+    print("  ⚠  First connection from any device: browser shows security warning.")
+    print('     Click "Advanced" → "Proceed to … (unsafe)"')
+    print("     LAN devices must use the Network URL above.")
     print()
     print("  Ctrl+C to stop.\n")
 
-    webbrowser.open(url)
+    webbrowser.open(local_url)
     httpd.serve_forever()
