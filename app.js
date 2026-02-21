@@ -1311,65 +1311,102 @@ document.addEventListener("keydown", e => {
 const guiPanel = document.getElementById("gui-panel");
 const guiContent = document.getElementById("gui-content");
 
+// Helper: find any element with data-id anywhere inside guiContent
+function guiFindById(id) {
+  return guiContent.querySelector(`[data-id="${CSS.escape(id)}"]`);
+}
+
 function handleGuiMessage(widget) {
   if (!widget) return;
 
-  // Show the panel + resize bar if hidden
+  // Show panel + resize bar on first message
   if (guiPanel.classList.contains("hidden")) {
     guiPanel.classList.remove("hidden");
     document.getElementById("gui-panel-resize").style.display = "";
   }
 
-  if (widget.type === "clear") {
-    guiContent.innerHTML = '';
-    return;
-  }
-  if (widget.type === "alert") {
-    toast(widget.message, 'info');
-    return;
-  }
-  if (widget.type === "update") {
-    const el = guiContent.querySelector(`[data-id="${widget.id}"]`);
-    if (el) el.textContent = widget.text;
-    return;
-  }
-  if (widget.type === "update_input") {
-    const el = guiContent.querySelector(`[data-id="${widget.id}"] input, [data-id="${widget.id}"]`);
-    if (el) el.value = widget.value;
-    return;
-  }
+  switch (widget.type) {
 
-  // Full render
-  if (widget.type === "window") {
-    guiContent.innerHTML = '';
-    if (widget.title) {
-      const title = document.createElement("div");
-      title.className = "gui-window-title";
-      title.textContent = widget.title;
-      guiContent.appendChild(title);
+    case "clear":
+      guiContent.innerHTML = '';
+      return;
+
+    case "alert":
+      toast(widget.message, 'info');
+      return;
+
+    // update_label: find element by data-id, update its text
+    case "update_label": {
+      const el = guiFindById(widget.id);
+      if (el) el.textContent = widget.text ?? '';
+      return;
     }
-    for (const child of (widget.children || [])) {
-      guiContent.appendChild(renderWidget(child));
+
+    // legacy key from old version — same as update_label
+    case "update": {
+      const el = guiFindById(widget.id);
+      if (el) el.textContent = widget.text ?? '';
+      return;
     }
-    return;
-  }
 
-  if (widget.type === "plot") {
-    guiContent.innerHTML = '';
-    guiContent.appendChild(renderWidget(widget));
-    return;
-  }
+    // update_input: find the input/textarea inside the data-id wrapper
+    case "update_input": {
+      const wrap = guiFindById(widget.id);
+      if (wrap) {
+        const inp = wrap.querySelector("input, textarea, select");
+        if (inp) inp.value = widget.value ?? '';
+      }
+      return;
+    }
 
-  // Otherwise append
-  guiContent.appendChild(renderWidget(widget));
+    // update_progress: update the bar width and label
+    case "update_progress": {
+      const wrap = guiFindById(widget.id);
+      if (wrap) {
+        const bar   = wrap.querySelector(".gui-progress-bar");
+        const label = wrap.querySelector(".gui-progress-label");
+        const pct   = Math.min(100, Math.max(0, Number(widget.value)));
+        if (bar)   bar.style.width = pct + '%';
+        if (label) label.textContent = Math.round(pct) + '%';
+      }
+      return;
+    }
+
+    // window: clear panel then render title + all children
+    case "window":
+      guiContent.innerHTML = '';
+      if (widget.title) {
+        const title = document.createElement("div");
+        title.className = "gui-window-title";
+        title.textContent = widget.title;
+        guiContent.appendChild(title);
+      }
+      for (const child of (widget.children || [])) {
+        const el = renderWidget(child);
+        if (el) guiContent.appendChild(el);
+      }
+      return;
+
+    // append: add a single widget without clearing
+    case "append":
+      if (widget.widget) guiContent.appendChild(renderWidget(widget.widget));
+      return;
+
+    // Anything else (plot, label, vbox…) — just append
+    default:
+      guiContent.appendChild(renderWidget(widget));
+  }
 }
 
 function renderWidget(w) {
   if (!w || typeof w !== 'object') {
     const t = document.createElement("span");
-    t.textContent = String(w);
+    t.textContent = String(w ?? '');
     return t;
   }
+
+  // Helper: attach data-id to any element
+  const setId = (el, id) => { if (id) { el.dataset.id = id; el.setAttribute('data-id', id); } };
 
   switch (w.type) {
 
@@ -1377,7 +1414,7 @@ function renderWidget(w) {
       const el = document.createElement("div");
       el.className = "gui-label";
       el.textContent = w.text || '';
-      if (w.id) { el.dataset.id = w.id; el.setAttribute('data-id', w.id); }
+      setId(el, w.id);
       if (w.style) Object.assign(el.style, w.style);
       return el;
     }
@@ -1387,6 +1424,7 @@ function renderWidget(w) {
       el.className = "gui-button";
       el.textContent = w.text || 'Button';
       if (w.color) el.style.background = w.color;
+      setId(el, w.id);
       el.addEventListener("click", () => {
         if (w.onclick) worker.postMessage({ type: "gui_event", name: w.onclick, args: [] });
       });
@@ -1396,7 +1434,7 @@ function renderWidget(w) {
     case "input": {
       const wrap = document.createElement("div");
       wrap.className = "gui-field";
-      wrap.setAttribute('data-id', w.id || '');
+      setId(wrap, w.id);
       if (w.label) {
         const lbl = document.createElement("label");
         lbl.className = "gui-field-label";
@@ -1408,7 +1446,7 @@ function renderWidget(w) {
       inp.type = "text";
       inp.placeholder = w.placeholder || '';
       inp.value = w.value || '';
-      inp.addEventListener("change", () => {
+      inp.addEventListener("input", () => {   // "input" fires on every keystroke
         if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [inp.value] });
       });
       wrap.appendChild(inp);
@@ -1418,6 +1456,7 @@ function renderWidget(w) {
     case "textarea": {
       const wrap = document.createElement("div");
       wrap.className = "gui-field";
+      setId(wrap, w.id);
       if (w.label) {
         const lbl = document.createElement("label");
         lbl.className = "gui-field-label";
@@ -1429,7 +1468,7 @@ function renderWidget(w) {
       ta.rows = w.rows || 4;
       ta.placeholder = w.placeholder || '';
       ta.value = w.value || '';
-      ta.addEventListener("change", () => {
+      ta.addEventListener("input", () => {
         if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [ta.value] });
       });
       wrap.appendChild(ta);
@@ -1439,6 +1478,7 @@ function renderWidget(w) {
     case "slider": {
       const wrap = document.createElement("div");
       wrap.className = "gui-field";
+      setId(wrap, w.id);
       if (w.label) {
         const lbl = document.createElement("label");
         lbl.className = "gui-field-label";
@@ -1466,6 +1506,7 @@ function renderWidget(w) {
     case "checkbox": {
       const wrap = document.createElement("label");
       wrap.className = "gui-checkbox";
+      setId(wrap, w.id);
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.checked = !!w.checked;
       cb.addEventListener("change", () => {
@@ -1480,6 +1521,7 @@ function renderWidget(w) {
     case "select": {
       const wrap = document.createElement("div");
       wrap.className = "gui-field";
+      setId(wrap, w.id);
       if (w.label) {
         const lbl = document.createElement("label");
         lbl.className = "gui-field-label";
@@ -1507,6 +1549,7 @@ function renderWidget(w) {
       img.src = w.src; img.alt = w.alt || '';
       if (w.width)  img.style.width  = typeof w.width  === 'number' ? w.width  + 'px' : w.width;
       if (w.height) img.style.height = typeof w.height === 'number' ? w.height + 'px' : w.height;
+      setId(img, w.id);
       return img;
     }
 
@@ -1514,6 +1557,7 @@ function renderWidget(w) {
       const canvas = document.createElement("canvas");
       canvas.className = "gui-canvas";
       canvas.id = w.id || ('canvas_' + Math.random().toString(36).slice(2));
+      canvas.setAttribute('data-id', canvas.id);
       canvas.width  = w.width  || 300;
       canvas.height = w.height || 200;
       return canvas;
@@ -1522,15 +1566,17 @@ function renderWidget(w) {
     case "progress": {
       const wrap = document.createElement("div");
       wrap.className = "gui-progress-wrap";
+      setId(wrap, w.id);
+      const max = w.max || 100;
+      const pct = Math.min(100, Math.max(0, ((w.value || 0) / max) * 100));
       const bar = document.createElement("div");
       bar.className = "gui-progress-bar";
-      const pct = Math.min(100, Math.max(0, ((w.value || 0) / (w.max || 100)) * 100));
       bar.style.width = pct + '%';
       if (w.color) bar.style.background = w.color;
-      const label = document.createElement("span");
-      label.className = "gui-progress-label";
-      label.textContent = Math.round(pct) + '%';
-      wrap.append(bar, label);
+      const lbl = document.createElement("span");
+      lbl.className = "gui-progress-label";
+      lbl.textContent = Math.round(pct) + '%';
+      wrap.append(bar, lbl);
       return wrap;
     }
 
@@ -1551,7 +1597,8 @@ function renderWidget(w) {
       el.className = "gui-hbox";
       el.style.gap = (w.gap || 8) + 'px';
       el.style.alignItems = w.align || 'center';
-      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      setId(el, w.id);
+      for (const c of (w.children || [])) { const r = renderWidget(c); if (r) el.appendChild(r); }
       return el;
     }
 
@@ -1559,7 +1606,8 @@ function renderWidget(w) {
       const el = document.createElement("div");
       el.className = "gui-vbox";
       el.style.gap = (w.gap || 8) + 'px';
-      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      setId(el, w.id);
+      for (const c of (w.children || [])) { const r = renderWidget(c); if (r) el.appendChild(r); }
       return el;
     }
 
@@ -1568,31 +1616,32 @@ function renderWidget(w) {
       el.className = "gui-grid";
       el.style.gridTemplateColumns = `repeat(${w.cols || 2}, 1fr)`;
       el.style.gap = (w.gap || 8) + 'px';
-      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      setId(el, w.id);
+      for (const c of (w.children || [])) { const r = renderWidget(c); if (r) el.appendChild(r); }
       return el;
     }
 
     case "card": {
       const el = document.createElement("div");
       el.className = "gui-card";
+      setId(el, w.id);
       if (w.title) {
         const t = document.createElement("div");
         t.className = "gui-card-title";
         t.textContent = w.title;
         el.appendChild(t);
       }
-      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      for (const c of (w.children || [])) { const r = renderWidget(c); if (r) el.appendChild(r); }
       return el;
     }
 
-    case "plot": {
+    case "plot":
       return renderPlot(w);
-    }
 
     default: {
       const el = document.createElement("div");
-      el.textContent = JSON.stringify(w);
-      el.style.cssText = "font-family:monospace;font-size:11px;color:var(--text3);";
+      el.style.cssText = "font-family:monospace;font-size:11px;color:var(--text3);padding:4px;";
+      el.textContent = `[unknown widget: ${w.type}]`;
       return el;
     }
   }
@@ -1738,38 +1787,55 @@ const _origHandleGui = handleGuiMessage;
 
 initEditor();
 
-const GUI_EXAMPLE = `# Run this to see the GUI panel!
+const GUI_EXAMPLE = `# ── CodeIt GUI Demo ──────────────────────────────────────
+# Run this file to see the GUI panel appear on the right.
+# Buttons fire Python callbacks defined below the window() call.
+# Inputs fire on_change_<id>(value) callbacks automatically.
 from codeit_gui import *
 
-clear()
+# Shared state dict — survives between button clicks
+_state = {"name": "", "speed": 60}
+
+def on_change_name(val):
+    _state["name"] = val
+
+def on_change_speed(val):
+    _state["speed"] = int(val)
+    update_label("speed_lbl", f"Speed: {val}")
+
+def say_hello():
+    n = _state.get("name") or "World"
+    update_label("output", f"Hello, {n}! 👋")
+    update_progress("prog", min(100, _state["speed"]))
+
+def do_reset():
+    _state["name"] = ""
+    _state["speed"] = 0
+    update_label("output", "")
+    update_input("name", "")
+    update_progress("prog", 0)
+
 window("🎛 CodeIt GUI Demo",
     vbox(
         label("Welcome to CodeIt GUI!", style={"fontSize":"15px","fontWeight":"600","color":"#60a5fa"}),
-        label("Python can render interactive widgets next to the terminal."),
+        label("Python widgets rendered live — buttons call Python functions."),
         separator(),
-        card(
-            label("Controls", style={"fontWeight":"600"}),
+        card(title="Controls",
             input_box("name", label="Your name:", placeholder="Enter your name"),
-            slider("speed", 0, 200, 60, label="Speed"),
+            slider("speed", 0, 100, 60, label="Speed"),
+            label("Speed: 60", id="speed_lbl"),
             hbox(
                 button("Say Hello", onclick="say_hello", color="#166534"),
                 button("Reset",     onclick="do_reset"),
             ),
         ),
-        progress(0, id="prog"),
         label("", id="output"),
+        progress(60, id="prog"),
+        separator(),
+        plot_line([0,1,4,9,16,25,36,49], title="y = x²", ylabel="y²", color="#a78bfa"),
+        plot_bar(["Jan","Feb","Mar","Apr"], [42,78,55,91], title="Sales", color="#3b82f6"),
     )
 )
-
-def say_hello():
-    import js  # noqa — not real, just demo callback
-    name = "World"  # In real use, read input value via on_change_name
-    update_label("output", f"Hello, {name}! 👋")
-
-def do_reset():
-    update_label("output", "")
-
-plot_line([0,1,4,9,16,25,36,49], title="y = x²", ylabel="y", color="#a78bfa")
 `;
 
 // Starter files
