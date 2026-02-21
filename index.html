@@ -869,6 +869,210 @@ body {
   transition: background 0.3s;
 }
 #autosave-indicator.active .dot { background: var(--green); }
+
+/* ════════════════════════════════════════
+   GUI PANEL
+════════════════════════════════════════ */
+#gui-panel {
+  width: 300px;
+  min-width: 200px;
+  max-width: 500px;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+#gui-panel.hidden { display: none !important; }
+#gui-panel-header {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px 5px 12px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 6px;
+  height: 28px;
+}
+#gui-panel-header span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text3);
+  flex: 1;
+}
+#gui-close {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.1s;
+}
+#gui-close:hover { color: var(--text); }
+#gui-panel-resize {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  order: -1;
+}
+#gui-panel-resize:hover, #gui-panel-resize.dragging { background: var(--accent); }
+#gui-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#gui-content::-webkit-scrollbar { width: 6px; }
+#gui-content::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+/* GUI widgets */
+#gui-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.gui-label {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.gui-button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.1s, transform 0.08s;
+  align-self: flex-start;
+}
+.gui-button:hover  { filter: brightness(1.15); }
+.gui-button:active { transform: scale(0.97); }
+.gui-field { display: flex; flex-direction: column; gap: 4px; }
+.gui-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text3);
+}
+.gui-input, .gui-textarea, .gui-select {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.gui-input:focus, .gui-textarea:focus, .gui-select:focus { border-color: var(--accent); }
+.gui-textarea { resize: vertical; min-height: 60px; }
+.gui-select { cursor: pointer; }
+.gui-slider { width: 100%; accent-color: var(--accent); }
+.gui-slider-val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent2);
+  min-width: 32px;
+  text-align: right;
+}
+.gui-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.gui-checkbox input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.gui-image { max-width: 100%; border-radius: 5px; display: block; }
+.gui-canvas { border-radius: 5px; background: var(--bg); display: block; max-width: 100%; }
+.gui-progress-wrap {
+  height: 20px;
+  background: var(--bg4);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+.gui-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 10px;
+  transition: width 0.3s;
+}
+.gui-progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: white;
+  mix-blend-mode: difference;
+}
+.gui-separator { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.gui-hbox { display: flex; flex-wrap: wrap; }
+.gui-vbox { display: flex; flex-direction: column; }
+.gui-grid { display: grid; }
+.gui-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gui-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.gui-window-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.gui-plot {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+.gui-plot-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 6px;
+  text-align: center;
+}
 </style>
 </head>
 <body>
@@ -984,8 +1188,21 @@ body {
       </div>
       <div id="terminal"></div>
     </div>
+  </div><!-- end editor-area -->
+
+  <!-- GUI Panel resize handle (hidden when panel hidden) -->
+  <div id="gui-panel-resize"></div>
+
+  <!-- GUI Panel — shown when Python outputs __GUI__: data -->
+  <div id="gui-panel" class="hidden">
+    <div id="gui-panel-header">
+      <span>🖼 GUI Output</span>
+      <button id="gui-close" title="Close GUI panel">×</button>
+    </div>
+    <div id="gui-content"></div>
   </div>
-</div>
+
+</div><!-- end #main -->
 
 <!-- ══════════════ PACKAGE MANAGER MODAL ══════════════ -->
 <div class="modal-overlay" id="pkg-modal">
