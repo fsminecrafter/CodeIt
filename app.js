@@ -707,25 +707,41 @@ async function openFile() {
 async function openFolder() {
   closeMenus();
   if (typeof window.showDirectoryPicker !== 'function') {
-    toast("Open Folder requires Chrome/Edge over http://", 'err'); return;
+    toast("Open Folder requires Chrome/Edge over https://", 'err'); return;
   }
   try {
-    const dir = await window.showDirectoryPicker();
+    // Request readwrite up-front so autosave works without a second prompt
+    const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
     rootDirHandle = dir;
     document.getElementById("folder-root-name").textContent = dir.name;
 
     // Clear existing
     files.clear(); folders.clear(); treeExpanded.clear();
 
+    // Close all file tabs (keep Run tab)
+    [...tabsEl.children].forEach(t => {
+      if (t.dataset.name && t.dataset.name !== "__run__") t.remove();
+    });
+    current = null;
+    setEditorContent('', []);
+
     await loadDirRecursive(dir, '');
     renderTree();
+
     // Open first relevant file
     const prio = ['main.py','index.py','main.cpp','main.c','index.js','index.html'];
     let picked = null;
     for (const p of prio) { if (files.has(p)) { picked = p; break; } }
     if (!picked) picked = files.keys().next().value;
     if (picked) openTab(picked);
-  } catch (e) { if (e.name !== "AbortError") console.error(e); }
+
+    toast(`Opened folder: ${dir.name}`, 'ok');
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      console.error(e);
+      toast("Failed to open folder: " + e.message, 'err');
+    }
+  }
 }
 
 async function loadDirRecursive(dirHandle, prefix) {
@@ -976,6 +992,8 @@ function createWorker() {
   const w = new Worker("worker.js?v=" + pyVersion);
   w.onmessage = e => {
     if (e.data.type === "output") tw(e.data.text);
+    else if (e.data.type === "gui")   handleGuiMessage(e.data.widget);
+    else if (e.data.type === "ready") tw(`\x1b[32mPyodide ${e.data.version} ready\x1b[0m`);
   };
   return w;
 }
@@ -1217,24 +1235,491 @@ document.addEventListener("keydown", e => {
 });
 
 // ═══════════════════════════════════════════════════════════
+//  GUI PANEL ENGINE
+//  Python code outputs __GUI__:{...} lines which are parsed
+//  by the worker and sent here as { type:"gui", widget:{...} }
+//  The GUI panel renders next to the terminal.
+// ═══════════════════════════════════════════════════════════
+
+const guiPanel = document.getElementById("gui-panel");
+const guiContent = document.getElementById("gui-content");
+
+function handleGuiMessage(widget) {
+  if (!widget) return;
+
+  // Show the panel + resize bar if hidden
+  if (guiPanel.classList.contains("hidden")) {
+    guiPanel.classList.remove("hidden");
+    document.getElementById("gui-panel-resize").style.display = "";
+  }
+
+  if (widget.type === "clear") {
+    guiContent.innerHTML = '';
+    return;
+  }
+  if (widget.type === "alert") {
+    toast(widget.message, 'info');
+    return;
+  }
+  if (widget.type === "update") {
+    const el = guiContent.querySelector(`[data-id="${widget.id}"]`);
+    if (el) el.textContent = widget.text;
+    return;
+  }
+  if (widget.type === "update_input") {
+    const el = guiContent.querySelector(`[data-id="${widget.id}"] input, [data-id="${widget.id}"]`);
+    if (el) el.value = widget.value;
+    return;
+  }
+
+  // Full render
+  if (widget.type === "window") {
+    guiContent.innerHTML = '';
+    if (widget.title) {
+      const title = document.createElement("div");
+      title.className = "gui-window-title";
+      title.textContent = widget.title;
+      guiContent.appendChild(title);
+    }
+    for (const child of (widget.children || [])) {
+      guiContent.appendChild(renderWidget(child));
+    }
+    return;
+  }
+
+  if (widget.type === "plot") {
+    guiContent.innerHTML = '';
+    guiContent.appendChild(renderWidget(widget));
+    return;
+  }
+
+  // Otherwise append
+  guiContent.appendChild(renderWidget(widget));
+}
+
+function renderWidget(w) {
+  if (!w || typeof w !== 'object') {
+    const t = document.createElement("span");
+    t.textContent = String(w);
+    return t;
+  }
+
+  switch (w.type) {
+
+    case "label": {
+      const el = document.createElement("div");
+      el.className = "gui-label";
+      el.textContent = w.text || '';
+      if (w.id) { el.dataset.id = w.id; el.setAttribute('data-id', w.id); }
+      if (w.style) Object.assign(el.style, w.style);
+      return el;
+    }
+
+    case "button": {
+      const el = document.createElement("button");
+      el.className = "gui-button";
+      el.textContent = w.text || 'Button';
+      if (w.color) el.style.background = w.color;
+      el.addEventListener("click", () => {
+        if (w.onclick) worker.postMessage({ type: "gui_event", name: w.onclick, args: [] });
+      });
+      return el;
+    }
+
+    case "input": {
+      const wrap = document.createElement("div");
+      wrap.className = "gui-field";
+      wrap.setAttribute('data-id', w.id || '');
+      if (w.label) {
+        const lbl = document.createElement("label");
+        lbl.className = "gui-field-label";
+        lbl.textContent = w.label;
+        wrap.appendChild(lbl);
+      }
+      const inp = document.createElement("input");
+      inp.className = "gui-input";
+      inp.type = "text";
+      inp.placeholder = w.placeholder || '';
+      inp.value = w.value || '';
+      inp.addEventListener("change", () => {
+        if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [inp.value] });
+      });
+      wrap.appendChild(inp);
+      return wrap;
+    }
+
+    case "textarea": {
+      const wrap = document.createElement("div");
+      wrap.className = "gui-field";
+      if (w.label) {
+        const lbl = document.createElement("label");
+        lbl.className = "gui-field-label";
+        lbl.textContent = w.label;
+        wrap.appendChild(lbl);
+      }
+      const ta = document.createElement("textarea");
+      ta.className = "gui-textarea";
+      ta.rows = w.rows || 4;
+      ta.placeholder = w.placeholder || '';
+      ta.value = w.value || '';
+      ta.addEventListener("change", () => {
+        if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [ta.value] });
+      });
+      wrap.appendChild(ta);
+      return wrap;
+    }
+
+    case "slider": {
+      const wrap = document.createElement("div");
+      wrap.className = "gui-field";
+      if (w.label) {
+        const lbl = document.createElement("label");
+        lbl.className = "gui-field-label";
+        lbl.textContent = w.label;
+        wrap.appendChild(lbl);
+      }
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:10px;";
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.className = "gui-slider";
+      slider.min = w.min ?? 0; slider.max = w.max ?? 100; slider.value = w.value ?? 50;
+      const val = document.createElement("span");
+      val.className = "gui-slider-val";
+      val.textContent = slider.value;
+      slider.addEventListener("input", () => {
+        val.textContent = slider.value;
+        if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [Number(slider.value)] });
+      });
+      row.append(slider, val);
+      wrap.appendChild(row);
+      return wrap;
+    }
+
+    case "checkbox": {
+      const wrap = document.createElement("label");
+      wrap.className = "gui-checkbox";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!w.checked;
+      cb.addEventListener("change", () => {
+        if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [cb.checked] });
+      });
+      const span = document.createElement("span");
+      span.textContent = w.text || '';
+      wrap.append(cb, span);
+      return wrap;
+    }
+
+    case "select": {
+      const wrap = document.createElement("div");
+      wrap.className = "gui-field";
+      if (w.label) {
+        const lbl = document.createElement("label");
+        lbl.className = "gui-field-label";
+        lbl.textContent = w.label;
+        wrap.appendChild(lbl);
+      }
+      const sel = document.createElement("select");
+      sel.className = "gui-select";
+      for (const opt of (w.options || [])) {
+        const o = document.createElement("option");
+        o.value = opt; o.textContent = opt;
+        if (opt === w.value) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => {
+        if (w.id) worker.postMessage({ type: "gui_event", name: `on_change_${w.id}`, args: [sel.value] });
+      });
+      wrap.appendChild(sel);
+      return wrap;
+    }
+
+    case "image": {
+      const img = document.createElement("img");
+      img.className = "gui-image";
+      img.src = w.src; img.alt = w.alt || '';
+      if (w.width)  img.style.width  = typeof w.width  === 'number' ? w.width  + 'px' : w.width;
+      if (w.height) img.style.height = typeof w.height === 'number' ? w.height + 'px' : w.height;
+      return img;
+    }
+
+    case "canvas": {
+      const canvas = document.createElement("canvas");
+      canvas.className = "gui-canvas";
+      canvas.id = w.id || ('canvas_' + Math.random().toString(36).slice(2));
+      canvas.width  = w.width  || 300;
+      canvas.height = w.height || 200;
+      return canvas;
+    }
+
+    case "progress": {
+      const wrap = document.createElement("div");
+      wrap.className = "gui-progress-wrap";
+      const bar = document.createElement("div");
+      bar.className = "gui-progress-bar";
+      const pct = Math.min(100, Math.max(0, ((w.value || 0) / (w.max || 100)) * 100));
+      bar.style.width = pct + '%';
+      if (w.color) bar.style.background = w.color;
+      const label = document.createElement("span");
+      label.className = "gui-progress-label";
+      label.textContent = Math.round(pct) + '%';
+      wrap.append(bar, label);
+      return wrap;
+    }
+
+    case "separator": {
+      const hr = document.createElement("hr");
+      hr.className = "gui-separator";
+      return hr;
+    }
+
+    case "spacer": {
+      const sp = document.createElement("div");
+      sp.style.height = (w.height || 8) + 'px';
+      return sp;
+    }
+
+    case "hbox": {
+      const el = document.createElement("div");
+      el.className = "gui-hbox";
+      el.style.gap = (w.gap || 8) + 'px';
+      el.style.alignItems = w.align || 'center';
+      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      return el;
+    }
+
+    case "vbox": {
+      const el = document.createElement("div");
+      el.className = "gui-vbox";
+      el.style.gap = (w.gap || 8) + 'px';
+      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      return el;
+    }
+
+    case "grid": {
+      const el = document.createElement("div");
+      el.className = "gui-grid";
+      el.style.gridTemplateColumns = `repeat(${w.cols || 2}, 1fr)`;
+      el.style.gap = (w.gap || 8) + 'px';
+      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      return el;
+    }
+
+    case "card": {
+      const el = document.createElement("div");
+      el.className = "gui-card";
+      if (w.title) {
+        const t = document.createElement("div");
+        t.className = "gui-card-title";
+        t.textContent = w.title;
+        el.appendChild(t);
+      }
+      for (const c of (w.children || [])) el.appendChild(renderWidget(c));
+      return el;
+    }
+
+    case "plot": {
+      return renderPlot(w);
+    }
+
+    default: {
+      const el = document.createElement("div");
+      el.textContent = JSON.stringify(w);
+      el.style.cssText = "font-family:monospace;font-size:11px;color:var(--text3);";
+      return el;
+    }
+  }
+}
+
+// ─── Lightweight canvas chart renderer ──────────────────────
+function renderPlot(w) {
+  const wrap = document.createElement("div");
+  wrap.className = "gui-plot";
+
+  if (w.title) {
+    const title = document.createElement("div");
+    title.className = "gui-plot-title";
+    title.textContent = w.title;
+    wrap.appendChild(title);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = 320;
+  canvas.height = 180;
+  canvas.style.cssText = "width:100%;height:auto;display:block;";
+  wrap.appendChild(canvas);
+
+  // Draw after appended (needs layout)
+  requestAnimationFrame(() => {
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    const PAD = 32;
+    ctx.clearRect(0, 0, W, H);
+
+    const accent = w.color || "#3b82f6";
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 1;
+
+    if (w.plot_type === "line") {
+      const raw = w.data || [];
+      const pts = raw.map((d, i) => Array.isArray(d) ? d : [i, d]);
+      if (!pts.length) return;
+      const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+
+      const toCanv = ([x, y]) => [
+        PAD + ((x - minX) / rangeX) * (W - 2*PAD),
+        (H - PAD) - ((y - minY) / rangeY) * (H - 2*PAD)
+      ];
+
+      // Axes
+      ctx.beginPath();
+      ctx.moveTo(PAD, PAD); ctx.lineTo(PAD, H - PAD);
+      ctx.lineTo(W - PAD, H - PAD);
+      ctx.strokeStyle = "#444"; ctx.stroke();
+
+      // Line
+      ctx.beginPath();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      pts.forEach((p, i) => {
+        const [cx, cy] = toCanv(p);
+        i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+      });
+      ctx.stroke();
+
+      // Dots
+      ctx.fillStyle = accent;
+      pts.forEach(p => {
+        const [cx, cy] = toCanv(p);
+        ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+      });
+
+      // Labels
+      ctx.fillStyle = "#94a3b8"; ctx.font = "10px 'IBM Plex Mono',monospace"; ctx.textAlign = "center";
+      if (w.xlabel) { ctx.fillText(w.xlabel, W/2, H - 4); }
+      ctx.textAlign = "right";
+      if (w.ylabel) { ctx.save(); ctx.translate(12, H/2); ctx.rotate(-Math.PI/2); ctx.fillText(w.ylabel, 0, 0); ctx.restore(); }
+
+    } else if (w.plot_type === "bar") {
+      const labels = w.labels || [], values = w.values || [];
+      if (!values.length) return;
+      const maxV = Math.max(...values, 1);
+      const barW = (W - 2*PAD) / values.length;
+
+      ctx.beginPath();
+      ctx.moveTo(PAD, PAD); ctx.lineTo(PAD, H - PAD);
+      ctx.lineTo(W - PAD, H - PAD);
+      ctx.strokeStyle = "#444"; ctx.stroke();
+
+      values.forEach((v, i) => {
+        const x = PAD + i * barW + barW * 0.1;
+        const bw = barW * 0.8;
+        const bh = ((v / maxV) * (H - 2*PAD));
+        const y = H - PAD - bh;
+        ctx.fillStyle = accent;
+        ctx.fillRect(x, y, bw, bh);
+
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "9px 'IBM Plex Mono',monospace";
+        ctx.textAlign = "center";
+        if (labels[i]) ctx.fillText(String(labels[i]).slice(0, 6), x + bw/2, H - PAD + 12);
+      });
+
+      if (w.title) {}  // already rendered above
+    }
+  });
+
+  return wrap;
+}
+
+// Close GUI panel button
+document.getElementById("gui-close").addEventListener("click", () => {
+  guiPanel.classList.add("hidden");
+  guiContent.innerHTML = '';
+  document.getElementById("gui-panel-resize").style.display = "none";
+});
+
+// GUI panel resize handle
+const guiResizeBar = document.getElementById("gui-panel-resize");
+let guiResizing = false, guiResizeStartX = 0, guiResizeStartW = 0;
+guiResizeBar.addEventListener("mousedown", e => {
+  guiResizing = true;
+  guiResizeStartX = e.clientX;
+  guiResizeStartW = guiPanel.offsetWidth;
+  guiResizeBar.classList.add("dragging");
+  e.preventDefault();
+});
+document.addEventListener("mousemove", e => {
+  if (!guiResizing) return;
+  const w = Math.max(180, Math.min(600, guiResizeStartW - (e.clientX - guiResizeStartX)));
+  guiPanel.style.width = w + "px";
+});
+document.addEventListener("mouseup", () => {
+  if (guiResizing) { guiResizing = false; guiResizeBar.classList.remove("dragging"); }
+});
+
+// Show resize bar when panel visible
+const _origHandleGui = handleGuiMessage;
+// (resize bar visibility handled inside handleGuiMessage via panel show)
+
+// ═══════════════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════════════
 
 initEditor();
 
+const GUI_EXAMPLE = `# Run this to see the GUI panel!
+from codeit_gui import *
+
+clear()
+window("🎛 CodeIt GUI Demo",
+    vbox(
+        label("Welcome to CodeIt GUI!", style={"fontSize":"15px","fontWeight":"600","color":"#60a5fa"}),
+        label("Python can render interactive widgets next to the terminal."),
+        separator(),
+        card(
+            label("Controls", style={"fontWeight":"600"}),
+            input_box("name", label="Your name:", placeholder="Enter your name"),
+            slider("speed", 0, 200, 60, label="Speed"),
+            hbox(
+                button("Say Hello", onclick="say_hello", color="#166534"),
+                button("Reset",     onclick="do_reset"),
+            ),
+        ),
+        progress(0, id="prog"),
+        label("", id="output"),
+    )
+)
+
+def say_hello():
+    import js  # noqa — not real, just demo callback
+    name = "World"  # In real use, read input value via on_change_name
+    update_label("output", f"Hello, {name}! 👋")
+
+def do_reset():
+    update_label("output", "")
+
+plot_line([0,1,4,9,16,25,36,49], title="y = x²", ylabel="y", color="#a78bfa")
+`;
+
 // Starter files
-files.set("main.py",   { handle: null, content: 'print("Hello from Pyodide!")\n\nfor i in range(5):\n    print(f"  Line {i+1}")\n', modified: false });
-files.set("hello.cpp", { handle: null, content: '#include <iostream>\n\nint main() {\n    std::cout << "Hello World!" << std::endl;\n    return 0;\n}\n', modified: false });
-files.set("hello.c",   { handle: null, content: '#include <stdio.h>\n\nint main() {\n    printf("Hello from C!\\n");\n    return 0;\n}\n', modified: false });
+files.set("main.py",     { handle: null, content: 'print("Hello from Pyodide!")\n\nfor i in range(5):\n    print(f"  Line {i+1}")\n', modified: false });
+files.set("gui_demo.py", { handle: null, content: GUI_EXAMPLE, modified: false });
+files.set("hello.cpp",   { handle: null, content: '#include <iostream>\n\nint main() {\n    std::cout << "Hello World!" << std::endl;\n    return 0;\n}\n', modified: false });
+files.set("hello.c",     { handle: null, content: '#include <stdio.h>\n\nint main() {\n    printf("Hello from C!\\n");\n    return 0;\n}\n', modified: false });
 folders.add("examples");
 files.set("examples/fib.py", { handle: null, content: 'def fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        print(a, end=" ")\n        a, b = b, a + b\n    print()\n\nfib(10)\n', modified: false });
 
 renderTree();
 openTab("main.py");
 
-tw("\x1b[36m╔══════════════════════════════╗\x1b[0m");
-tw("\x1b[36m║   Welcome to CodeIt IDE      ║\x1b[0m");
-tw("\x1b[36m╚══════════════════════════════╝\x1b[0m");
-tw("\x1b[90mPython runs in-browser via Pyodide. C/C++ requires launch.py.\x1b[0m");
-tw("\x1b[90mCtrl+F to find  •  Ctrl+S to save  •  Ctrl+N for new file\x1b[0m");
+tw("\x1b[36m╔══════════════════════════════════════════╗\x1b[0m");
+tw("\x1b[36m║   Welcome to CodeIt IDE                  ║\x1b[0m");
+tw("\x1b[36m╚══════════════════════════════════════════╝\x1b[0m");
+tw("\x1b[90mPython → Pyodide (in-browser)  •  C/C++ → requires launch.py\x1b[0m");
+tw("\x1b[90mCtrl+F find  •  Ctrl+S save  •  Ctrl+N new file\x1b[0m");
+tw("\x1b[33mTip: open gui_demo.py and run it to see the GUI panel!\x1b[0m");
 tw("");
