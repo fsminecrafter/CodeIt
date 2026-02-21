@@ -120,9 +120,13 @@ function getLangExtension(filename) {
 // Paths are relative to root, e.g. "main.py" or "src/utils.py"
 // folders: Set of folder paths (for display in tree)
 // sandboxFiles: Set of file paths that get copied into the C/C++ sandbox run dir
-const files       = new Map();
-const folders     = new Set();
-const sandboxFiles = new Set();
+// sandboxOutputFolders: Map of "sandbox-XXXXXXXX" → Map of filename → content
+//   These are virtual folders that appear in the tree after a C/C++ run that
+//   produced output files. They persist until the user hides or moves them.
+const files               = new Map();
+const folders             = new Set();
+const sandboxFiles        = new Set();
+const sandboxOutputFolders = new Map();  // folderName → Map<filename, content>
 let current = null;  // currently open file path, or "__run__"
 
 // Folder access handle for autosave
@@ -302,6 +306,79 @@ function renderTree() {
   for (const [name, node] of sorted) {
     renderNode(node, name, 0, '');
   }
+
+  // ── Sandbox output folders ────────────────────────────────────────────────
+  // Rendered at the bottom of the tree, always expanded, with amber styling.
+  for (const [folderName, fileMap] of sandboxOutputFolders) {
+    const folderEl = document.createElement("div");
+    folderEl.className = "tree-item folder-item sandbox-out-folder";
+    folderEl.style.paddingLeft = "4px";
+
+    const toggle = document.createElement("span");
+    toggle.className = "tree-toggle open";
+    toggle.textContent = "▶";
+
+    const icon = document.createElement("span");
+    icon.className = "tree-icon";
+    icon.textContent = "🔒";
+
+    const lbl = document.createElement("span");
+    lbl.className = "tree-label";
+    lbl.textContent = folderName;
+
+    folderEl.append(toggle, icon, lbl);
+
+    folderEl.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      showCtxMenu(e.clientX, e.clientY, { type: 'sandbox-out-folder', path: folderName });
+    });
+    // Toggle expand/collapse
+    let expanded = true;
+    folderEl.addEventListener("click", e => {
+      e.stopPropagation();
+      expanded = !expanded;
+      toggle.classList.toggle("open", expanded);
+      icon.textContent = expanded ? "🔒" : "📁";
+      childWrap.style.display = expanded ? "" : "none";
+    });
+    treeEl.appendChild(folderEl);
+
+    // Children wrapper
+    const childWrap = document.createElement("div");
+    for (const [fname, content] of fileMap) {
+      const fpath = folderName + "/" + fname;
+      const fileEl = document.createElement("div");
+      fileEl.className = "tree-item sandbox-out-file" + (current === fpath ? " active" : "");
+      fileEl.style.paddingLeft = "36px";
+
+      const ficon = document.createElement("span");
+      ficon.className = "tree-icon";
+      ficon.textContent = getFileIcon(fname);
+
+      const flbl = document.createElement("span");
+      flbl.className = "tree-label";
+      flbl.textContent = fname;
+
+      fileEl.append(ficon, flbl);
+
+      fileEl.addEventListener("click", () => {
+        // Open read-only view in editor — inject into files map temporarily
+        if (!files.has(fpath)) {
+          files.set(fpath, { handle: null, content, modified: false, sandboxOut: true });
+        }
+        openTab(fpath);
+      });
+      fileEl.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        showCtxMenu(e.clientX, e.clientY, {
+          type: 'sandbox-out-file', path: fpath,
+          folderName, fname, content
+        });
+      });
+      childWrap.appendChild(fileEl);
+    }
+    treeEl.appendChild(childWrap);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -316,15 +393,51 @@ function showCtxMenu(x, y, target) {
   ctxMenu.style.left = x + "px";
   ctxMenu.style.top  = y + "px";
 
-  // Show/hide sandbox item — only for files, not folders
-  const sandboxItem = document.getElementById("ctx-sandbox");
-  if (target.type === 'file') {
-    sandboxItem.style.display = '';
+  // All items default visible/hidden state
+  const sandboxItem    = document.getElementById("ctx-sandbox");
+  const sandboxSep     = document.querySelector(".ctx-sandbox-sep");
+  const outSection     = document.getElementById("ctx-sandbox-out-section");
+  const renameItem     = document.getElementById("ctx-rename");
+  const newFileItem    = document.getElementById("ctx-new-file");
+  const newFolderItem  = document.getElementById("ctx-new-folder");
+  const deleteItem     = document.getElementById("ctx-delete");
+
+  // Reset all
+  [sandboxItem, sandboxSep, renameItem, newFileItem, newFolderItem, deleteItem]
+    .forEach(el => { if (el) el.style.display = ''; });
+  if (outSection) outSection.style.display = 'none';
+
+  if (target.type === 'sandbox-out-folder') {
+    // Only "Hide sandbox folder" — no rename/delete/new
+    renameItem.style.display   = 'none';
+    newFileItem.style.display  = 'none';
+    newFolderItem.style.display= 'none';
+    deleteItem.style.display   = 'none';
+    sandboxItem.style.display  = 'none';
+    sandboxSep.style.display   = 'none';
+    if (outSection) outSection.style.display = '';
+
+  } else if (target.type === 'sandbox-out-file') {
+    // "Move to…" and "Hide" — no rename/delete/sandbox toggle
+    renameItem.style.display   = 'none';
+    newFileItem.style.display  = 'none';
+    newFolderItem.style.display= 'none';
+    deleteItem.style.display   = 'none';
+    sandboxItem.style.display  = 'none';
+    sandboxSep.style.display   = 'none';
+    if (outSection) outSection.style.display = '';
+
+  } else if (target.type === 'file') {
+    if (outSection) outSection.style.display = 'none';
     const inSandbox = sandboxFiles.has(target.path);
     sandboxItem.textContent = inSandbox ? '📦 Remove from sandbox' : '📦 Add to sandbox';
     sandboxItem.classList.toggle('active-sandbox', inSandbox);
+
   } else {
+    // folder
     sandboxItem.style.display = 'none';
+    sandboxSep.style.display  = 'none';
+    if (outSection) outSection.style.display = 'none';
   }
 
   ctxMenu.classList.add("visible");
@@ -421,6 +534,97 @@ document.getElementById("ctx-sandbox").addEventListener("click", () => {
   } else {
     sandboxFiles.add(path);
     toast(`Added to sandbox: ${path.split('/').pop()} — will copy to C/C++ run dir`, 'ok');
+  }
+  renderTree();
+});
+
+// ── Sandbox output file/folder actions ────────────────────────────────────
+
+document.getElementById("ctx-sandbox-out-move").addEventListener("click", () => {
+  hideCtxMenu();
+  if (!ctxTarget) return;
+
+  // Build list of available destination folders (existing folders + root)
+  const destinations = ['(project root)', ...folders];
+  const destStr = destinations.map((d, i) => `${i}: ${d}`).join('\n');
+  const choice = prompt(`Move to folder:\n${destStr}\n\nEnter number or folder name:`);
+  if (choice === null) return;
+
+  const idx = parseInt(choice);
+  let destFolder = '';
+  if (!isNaN(idx) && idx >= 0 && idx < destinations.length) {
+    destFolder = destinations[idx] === '(project root)' ? '' : destinations[idx];
+  } else {
+    destFolder = choice.trim() === '(project root)' ? '' : choice.trim();
+  }
+
+  if (ctxTarget.type === 'sandbox-out-file') {
+    // Move a single file
+    const { folderName, fname, content } = ctxTarget;
+    const newPath = destFolder ? destFolder + '/' + fname : fname;
+    files.set(newPath, { handle: null, content, modified: true, sandboxOut: false });
+    if (destFolder && !folders.has(destFolder)) folders.add(destFolder);
+
+    // Remove this file from its sandbox output folder
+    const fmap = sandboxOutputFolders.get(folderName);
+    if (fmap) {
+      fmap.delete(fname);
+      if (fmap.size === 0) sandboxOutputFolders.delete(folderName);
+    }
+    // Clean up temp entry in files map
+    files.delete(folderName + '/' + fname);
+    toast(`Moved ${fname} → ${destFolder || 'root'}`, 'ok');
+    renderTree();
+    openTab(newPath);
+
+  } else if (ctxTarget.type === 'sandbox-out-folder') {
+    // Move all files in the folder
+    const folderName = ctxTarget.path;
+    const fmap = sandboxOutputFolders.get(folderName);
+    if (!fmap) return;
+    if (destFolder && !folders.has(destFolder)) folders.add(destFolder);
+    for (const [fname, content] of fmap) {
+      const newPath = destFolder ? destFolder + '/' + fname : fname;
+      files.set(newPath, { handle: null, content, modified: true, sandboxOut: false });
+      files.delete(folderName + '/' + fname);
+    }
+    sandboxOutputFolders.delete(folderName);
+    toast(`Moved all files from ${folderName} → ${destFolder || 'root'}`, 'ok');
+    renderTree();
+  }
+});
+
+document.getElementById("ctx-sandbox-out-hide").addEventListener("click", () => {
+  hideCtxMenu();
+  if (!ctxTarget) return;
+
+  if (ctxTarget.type === 'sandbox-out-file') {
+    const { folderName, fname } = ctxTarget;
+    // Remove from sandbox output folder
+    const fmap = sandboxOutputFolders.get(folderName);
+    if (fmap) {
+      fmap.delete(fname);
+      if (fmap.size === 0) sandboxOutputFolders.delete(folderName);
+    }
+    // Remove temp tab entry
+    const fpath = folderName + '/' + fname;
+    files.delete(fpath);
+    if (current === fpath) closeTab(fpath);
+    toast(`Hidden: ${fname}`, 'info');
+
+  } else if (ctxTarget.type === 'sandbox-out-folder') {
+    const folderName = ctxTarget.path;
+    const fmap = sandboxOutputFolders.get(folderName);
+    if (fmap) {
+      // Close any open tabs from this folder
+      for (const fname of fmap.keys()) {
+        const fpath = folderName + '/' + fname;
+        files.delete(fpath);
+        if (current === fpath) closeTab(fpath);
+      }
+    }
+    sandboxOutputFolders.delete(folderName);
+    toast(`Hidden: ${folderName}`, 'info');
   }
   renderTree();
 });
@@ -1001,7 +1205,6 @@ async function runCpp(code, lang) {
   for (const path of sandboxFiles) {
     const f = files.get(path);
     if (f) {
-      // Use just the filename (no path) so it lands flat in the run dir
       sandboxPayload[path.split('/').pop()] = f.content;
     }
   }
@@ -1028,7 +1231,6 @@ async function runCpp(code, lang) {
     });
     const runData = await runRes.json();
 
-    // Show sandbox info
     if (runData.sandbox) {
       tw(`\x1b[90m  🔒 ${runData.sandbox}\x1b[0m`);
     }
@@ -1040,6 +1242,29 @@ async function runCpp(code, lang) {
     }
     const ec = runData.exit_code ?? 0;
     tw(`\x1b[90m─── exit ${ec === 0 ? "\x1b[32m" : "\x1b[31m"}${ec}\x1b[90m ───\x1b[0m`);
+
+    // ── Handle output files written by the program ─────────────────────────
+    const outFiles = runData.output_files || {};
+    const outNames = Object.keys(outFiles);
+    if (outNames.length > 0) {
+      // Generate a short ID matching the server's sandbox user suffix style
+      const id = Math.random().toString(36).slice(2, 10).toUpperCase();
+      const folderName = `sandbox-${id}`;
+
+      const fileMap = new Map();
+      for (const [fname, content] of Object.entries(outFiles)) {
+        fileMap.set(fname, content);
+      }
+      sandboxOutputFolders.set(folderName, fileMap);
+
+      tw(`\x1b[33m  📁 ${outNames.length} output file${outNames.length !== 1 ? 's' : ''} → ${folderName} (see explorer)\x1b[0m`);
+      outNames.forEach(n => tw(`\x1b[90m     • ${n}\x1b[0m`));
+
+      renderTree();
+      // Auto-expand the explorer to show the new folder
+      toast(`${outNames.length} file${outNames.length !== 1 ? 's' : ''} written by program → ${folderName}`, 'ok');
+    }
+
   } catch (e) {
     tw("\x1b[31mFetch failed: " + e.message + "\x1b[0m");
     tw("\x1b[90mIs the server running?  python launch.py\x1b[0m");
@@ -1056,7 +1281,10 @@ let pyVersion = "0.27.2";
 let worker = createWorker();
 
 function createWorker() {
-  const w = new Worker("worker.js?v=" + pyVersion);
+  // Cache-bust the worker URL with a hash so browsers never serve a stale
+  // worker.js after an update. The timestamp changes on every IDE reload.
+  const workerBust = "cb=" + Date.now();
+  const w = new Worker("worker.js?v=" + pyVersion + "&" + workerBust);
   w.onmessage = e => {
     if (e.data.type === "output") tw(e.data.text);
     else if (e.data.type === "gui")   handleGuiMessage(e.data.widget);
@@ -1787,245 +2015,62 @@ const _origHandleGui = handleGuiMessage;
 
 initEditor();
 
-const GUI_EXAMPLE = `# ── CodeIt GUI — Full Example ────────────────────────────────
-# This file demonstrates every widget in codeit_gui.
-# Run it, then interact with the panel on the right.
-# Buttons call Python functions; inputs/sliders fire on_change_<id>.
+const GUI_EXAMPLE = `# ── CodeIt GUI Demo ──────────────────────────────────────
+# Run this file to see the GUI panel appear on the right.
+# Buttons fire Python callbacks defined below the window() call.
+# Inputs fire on_change_<id>(value) callbacks automatically.
 from codeit_gui import *
 
-# ── Shared state ──────────────────────────────────────────────
-_s = {
-    "name":    "",
-    "r": 99, "g": 60, "b": 180,
-    "items":   [],
-    "counter": 0,
-    "unit":    "km/h",
-    "speed":   72,
-}
+# Shared state dict — survives between button clicks
+_state = {"name": "", "speed": 60}
 
-# ══════════════════════════════════════════════════════════════
-#  SECTION 1 — HELLO CARD  (label, input, button)
-# ══════════════════════════════════════════════════════════════
 def on_change_name(val):
-    _s["name"] = val
+    _state["name"] = val
 
-def greet():
-    n = _s["name"].strip() or "stranger"
-    update_label("greeting", f"👋 Hello, {n}!")
+def on_change_speed(val):
+    _state["speed"] = int(val)
+    update_label("speed_lbl", f"Speed: {val}")
 
-def clear_greeting():
-    update_label("greeting", "")
+def say_hello():
+    n = _state.get("name") or "World"
+    update_label("output", f"Hello, {n}! 👋")
+    update_progress("prog", min(100, _state["speed"]))
+
+def do_reset():
+    _state["name"] = ""
+    _state["speed"] = 0
+    update_label("output", "")
     update_input("name", "")
-    _s["name"] = ""
+    update_progress("prog", 0)
 
-# ══════════════════════════════════════════════════════════════
-#  SECTION 2 — COUNTER  (button, label, progress)
-# ══════════════════════════════════════════════════════════════
-def count_up():
-    _s["counter"] = min(100, _s["counter"] + 10)
-    update_label("count_lbl",  str(_s["counter"]))
-    update_progress("count_bar", _s["counter"])
-
-def count_down():
-    _s["counter"] = max(0, _s["counter"] - 10)
-    update_label("count_lbl",  str(_s["counter"]))
-    update_progress("count_bar", _s["counter"])
-
-def count_reset():
-    _s["counter"] = 0
-    update_label("count_lbl",  "0")
-    update_progress("count_bar", 0)
-
-# ══════════════════════════════════════════════════════════════
-#  SECTION 3 — COLOUR MIXER  (slider × 3, live preview label)
-# ══════════════════════════════════════════════════════════════
-def _refresh_colour():
-    r, g, b = _s["r"], _s["g"], _s["b"]
-    hex_col = f"#{r:02x}{g:02x}{b:02x}"
-    update_label("col_preview",
-                 f"  {hex_col}  ",
-                 )
-    # We can inject inline style via a fresh label emit
-    show(label(f"▮  {hex_col}",
-               id="col_preview",
-               style={"background": hex_col,
-                      "color": "#fff" if (r*0.299+g*0.587+b*0.114) < 128 else "#000",
-                      "padding": "6px 14px",
-                      "borderRadius": "6px",
-                      "fontFamily": "monospace",
-                      "fontWeight": "600"}))
-
-def on_change_red(val):
-    _s["r"] = int(val)
-    _refresh_colour()
-
-def on_change_green(val):
-    _s["g"] = int(val)
-    _refresh_colour()
-
-def on_change_blue(val):
-    _s["b"] = int(val)
-    _refresh_colour()
-
-# ══════════════════════════════════════════════════════════════
-#  SECTION 4 — TODO LIST  (input, button, dynamic labels)
-# ══════════════════════════════════════════════════════════════
-def on_change_todo_input(val):
-    _s["_todo_draft"] = val
-
-def add_todo():
-    item = _s.get("_todo_draft", "").strip()
-    if not item:
-        return
-    _s["items"].append(item)
-    _s["_todo_draft"] = ""
-    update_input("todo_input", "")
-    _render_todo()
-
-def clear_todos():
-    _s["items"] = []
-    _render_todo()
-
-def _render_todo():
-    if not _s["items"]:
-        update_label("todo_list", "No items yet.")
-    else:
-        text = "\n".join(f"• {i}" for i in _s["items"])
-        update_label("todo_list", text)
-
-# ══════════════════════════════════════════════════════════════
-#  SECTION 5 — UNIT CONVERTER  (input, select, label)
-# ══════════════════════════════════════════════════════════════
-_CONVERSIONS = {
-    "km/h → mph":  lambda v: v * 0.621371,
-    "mph → km/h":  lambda v: v * 1.60934,
-    "°C → °F":     lambda v: v * 9/5 + 32,
-    "°F → °C":     lambda v: (v - 32) * 5/9,
-    "kg → lbs":    lambda v: v * 2.20462,
-    "lbs → kg":    lambda v: v * 0.453592,
-    "m → ft":      lambda v: v * 3.28084,
-    "ft → m":      lambda v: v * 0.3048,
-}
-
-def on_change_conv_val(val):
-    _s["_conv_val"] = val
-    _do_convert()
-
-def on_change_conv_type(val):
-    _s["_conv_type"] = val
-    _do_convert()
-
-def _do_convert():
-    try:
-        v   = float(_s.get("_conv_val", "0") or "0")
-        fn  = _CONVERSIONS.get(_s.get("_conv_type", "km/h → mph"))
-        res = fn(v) if fn else 0
-        update_label("conv_result", f"= {res:.4f}")
-    except Exception:
-        update_label("conv_result", "—")
-
-# ══════════════════════════════════════════════════════════════
-#  SECTION 6 — CHARTS
-# ══════════════════════════════════════════════════════════════
-import math
-_xs   = list(range(0, 37, 3))
-_sine = [round(math.sin(math.radians(x)) * 100) / 100 for x in _xs]
-_months  = ["Jan","Feb","Mar","Apr","May","Jun"]
-_revenue = [38, 52, 47, 71, 65, 83]
-
-# ══════════════════════════════════════════════════════════════
-#  RENDER EVERYTHING
-# ══════════════════════════════════════════════════════════════
-window("🧪 CodeIt GUI — Full Demo",
+window("🎛 CodeIt GUI Demo",
     vbox(
-
-        # ── 1. Hello card ──────────────────────────────────
-        card(
-            input_box("name", label="Your name:", placeholder="Type your name…"),
+        label("Welcome to CodeIt GUI!", style={"fontSize":"15px","fontWeight":"600","color":"#60a5fa"}),
+        label("Python widgets rendered live — buttons call Python functions."),
+        separator(),
+        card(title="Controls",
+            input_box("name", label="Your name:", placeholder="Enter your name"),
+            slider("speed", 0, 100, 60, label="Speed"),
+            label("Speed: 60", id="speed_lbl"),
             hbox(
-                button("Greet",  onclick="greet",         color="#166534"),
-                button("Clear",  onclick="clear_greeting"),
+                button("Say Hello", onclick="say_hello", color="#166534"),
+                button("Reset",     onclick="do_reset"),
             ),
-            label("", id="greeting"),
-            title="👋 Greeter",
         ),
-
-        # ── 2. Counter ─────────────────────────────────────
-        card(
-            hbox(
-                button("− 10",  onclick="count_down"),
-                label("0", id="count_lbl",
-                      style={"fontSize":"22px","fontWeight":"700",
-                             "minWidth":"40px","textAlign":"center"}),
-                button("+ 10",  onclick="count_up",  color="#1e40af"),
-                button("Reset", onclick="count_reset"),
-            ),
-            progress(0, id="count_bar"),
-            title="🔢 Counter",
-        ),
-
-        # ── 3. Colour mixer ────────────────────────────────
-        card(
-            slider("red",   0, 255, 99,  label="Red"),
-            slider("green", 0, 255, 60,  label="Green"),
-            slider("blue",  0, 255, 180, label="Blue"),
-            label("▮  #633cb4",
-                  id="col_preview",
-                  style={"background":"#633cb4","color":"#fff",
-                         "padding":"6px 14px","borderRadius":"6px",
-                         "fontFamily":"monospace","fontWeight":"600"}),
-            title="🎨 RGB Colour Mixer",
-        ),
-
-        # ── 4. Todo list ───────────────────────────────────
-        card(
-            hbox(
-                input_box("todo_input", placeholder="New item…"),
-                button("Add",   onclick="add_todo",    color="#166534"),
-                button("Clear", onclick="clear_todos"),
-            ),
-            label("No items yet.", id="todo_list",
-                  style={"whiteSpace":"pre-line","lineHeight":"1.8"}),
-            title="✅ To-Do List",
-        ),
-
-        # ── 5. Unit converter ──────────────────────────────
-        card(
-            hbox(
-                input_box("conv_val", placeholder="Value", value="100"),
-                select("conv_type",
-                       list(_CONVERSIONS.keys()),
-                       value="km/h → mph"),
-            ),
-            label("= 62.1371", id="conv_result",
-                  style={"fontSize":"18px","fontWeight":"700","color":"#60a5fa"}),
-            title="📐 Unit Converter",
-        ),
-
-        # ── 6. Charts ──────────────────────────────────────
-        card(
-            plot_line(_sine, title="sin(x°)", xlabel="degrees", ylabel="sin",
-                      color="#f472b6"),
-            spacer(8),
-            plot_bar(_months, _revenue, title="Monthly Revenue ($k)",
-                     color="#3b82f6"),
-            title="📊 Charts",
-        ),
-
+        label("", id="output"),
+        progress(60, id="prog"),
+        separator(),
+        plot_line([0,1,4,9,16,25,36,49], title="y = x²", ylabel="y²", color="#a78bfa"),
+        plot_bar(["Jan","Feb","Mar","Apr"], [42,78,55,91], title="Sales", color="#3b82f6"),
     )
 )
-
-# Prime the converter result on load
-_s["_conv_val"]  = "100"
-_s["_conv_type"] = "km/h → mph"
-_do_convert()
 `;
 
 // Starter files
-files.set("gui_demo.py", { handle: null, content: GUI_EXAMPLE, modified: false });
+files.set("main.py",     { handle: null, content: 'print("Hello from Pyodide!")\n\nfor i in range(5):\n    print(f"  Line {i+1}")\n', modified: false });
 
 renderTree();
-openTab("gui_demo.py");
+openTab("main.py");
 
 tw("\x1b[36m╔══════════════════════════════════════════╗\x1b[0m");
 tw("\x1b[36m║   Welcome to CodeIt IDE                  ║\x1b[0m");
