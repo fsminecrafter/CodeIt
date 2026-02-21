@@ -836,7 +836,18 @@ body {
 }
 .ctx-item:hover { background: var(--bg4); color: var(--text); }
 .ctx-item.danger:hover { background: rgba(248,113,113,0.12); color: var(--red); }
+.ctx-item.active-sandbox { color: var(--yellow); }
+.ctx-item.active-sandbox:hover { background: rgba(251,191,36,0.1); color: var(--yellow); }
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 4px; }
+
+/* Sandbox badge on tree items */
+.sandbox-badge {
+  font-size: 11px;
+  margin-left: 4px;
+  opacity: 0.75;
+  flex-shrink: 0;
+  cursor: default;
+}
 
 /* Rename input in tree */
 .tree-rename-input {
@@ -1282,6 +1293,8 @@ body {
   <div class="ctx-item" id="ctx-new-file">New File Here</div>
   <div class="ctx-item" id="ctx-new-folder">New Folder Here</div>
   <div class="ctx-sep"></div>
+  <div class="ctx-item" id="ctx-sandbox">📦 Add to sandbox</div>
+  <div class="ctx-sep ctx-sandbox-sep"></div>
   <div class="ctx-item danger" id="ctx-delete">Delete</div>
 </div>
 
