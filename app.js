@@ -119,8 +119,10 @@ function getLangExtension(filename) {
 // files: Map of "path" → { content, handle, modified }
 // Paths are relative to root, e.g. "main.py" or "src/utils.py"
 // folders: Set of folder paths (for display in tree)
-const files   = new Map();
-const folders = new Set();
+// sandboxFiles: Set of file paths that get copied into the C/C++ sandbox run dir
+const files       = new Map();
+const folders     = new Set();
+const sandboxFiles = new Set();
 let current = null;  // currently open file path, or "__run__"
 
 // Folder access handle for autosave
@@ -263,6 +265,16 @@ function renderTree() {
       label.textContent = name;
 
       el.append(icon, label);
+
+      // Sandbox badge
+      if (sandboxFiles.has(node.path)) {
+        const badge = document.createElement("span");
+        badge.className = "sandbox-badge";
+        badge.title = "In C/C++ sandbox";
+        badge.textContent = "📦";
+        el.appendChild(badge);
+      }
+
       el.addEventListener("click", () => openTab(node.path));
       el.addEventListener("contextmenu", e => {
         e.preventDefault();
@@ -303,6 +315,18 @@ function showCtxMenu(x, y, target) {
   ctxTarget = target;
   ctxMenu.style.left = x + "px";
   ctxMenu.style.top  = y + "px";
+
+  // Show/hide sandbox item — only for files, not folders
+  const sandboxItem = document.getElementById("ctx-sandbox");
+  if (target.type === 'file') {
+    sandboxItem.style.display = '';
+    const inSandbox = sandboxFiles.has(target.path);
+    sandboxItem.textContent = inSandbox ? '📦 Remove from sandbox' : '📦 Add to sandbox';
+    sandboxItem.classList.toggle('active-sandbox', inSandbox);
+  } else {
+    sandboxItem.style.display = 'none';
+  }
+
   ctxMenu.classList.add("visible");
 }
 
@@ -327,6 +351,11 @@ document.getElementById("ctx-rename").addEventListener("click", () => {
     const f = files.get(ctxTarget.path);
     files.delete(ctxTarget.path);
     files.set(newPath, f);
+    // Keep sandbox membership across renames
+    if (sandboxFiles.has(ctxTarget.path)) {
+      sandboxFiles.delete(ctxTarget.path);
+      sandboxFiles.add(newPath);
+    }
     if (current === ctxTarget.path) {
       // update tab
       const tab = [...document.getElementById("tabs").children].find(t => t.dataset.name === ctxTarget.path);
@@ -365,6 +394,7 @@ document.getElementById("ctx-delete").addEventListener("click", () => {
   if (!confirm(`Delete "${ctxTarget.path}"?`)) return;
   if (ctxTarget.type === 'file') {
     files.delete(ctxTarget.path);
+    sandboxFiles.delete(ctxTarget.path);
     if (current === ctxTarget.path) {
       closeTab(ctxTarget.path);
     }
@@ -373,9 +403,24 @@ document.getElementById("ctx-delete").addEventListener("click", () => {
     for (const p of [...files.keys()]) {
       if (p.startsWith(ctxTarget.path + '/')) {
         files.delete(p);
+        sandboxFiles.delete(p);
         if (current === p) closeTab(p);
       }
     }
+  }
+  renderTree();
+});
+
+document.getElementById("ctx-sandbox").addEventListener("click", () => {
+  hideCtxMenu();
+  if (!ctxTarget || ctxTarget.type !== 'file') return;
+  const path = ctxTarget.path;
+  if (sandboxFiles.has(path)) {
+    sandboxFiles.delete(path);
+    toast(`Removed from sandbox: ${path.split('/').pop()}`, 'info');
+  } else {
+    sandboxFiles.add(path);
+    toast(`Added to sandbox: ${path.split('/').pop()} — will copy to C/C++ run dir`, 'ok');
   }
   renderTree();
 });
@@ -950,10 +995,22 @@ async function runCurrent() {
 async function runCpp(code, lang) {
   const btn = document.getElementById("run-btn");
   btn.disabled = true; btn.textContent = "⏳";
+
+  // Build sandbox_files payload: {filename: content} for each pinned file
+  const sandboxPayload = {};
+  for (const path of sandboxFiles) {
+    const f = files.get(path);
+    if (f) {
+      // Use just the filename (no path) so it lands flat in the run dir
+      sandboxPayload[path.split('/').pop()] = f.content;
+    }
+  }
+  const hasSandboxFiles = Object.keys(sandboxPayload).length > 0;
+
   try {
     const buildRes = await fetch("/build", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lang, code })
+      body: JSON.stringify({ lang, code, sandbox_files: sandboxPayload })
     });
     const buildData = await buildRes.json();
     if (buildData.error) {
@@ -961,11 +1018,21 @@ async function runCpp(code, lang) {
       buildData.error.split('\n').forEach(l => l && tw("\x1b[31m" + l + "\x1b[0m")); return;
     }
     tw("\x1b[32m✓ Compiled\x1b[0m");
+    if (hasSandboxFiles) {
+      tw(`\x1b[33m  sandbox files: ${Object.keys(sandboxPayload).join(', ')}\x1b[0m`);
+    }
+
     const runRes = await fetch("/run", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ exe: buildData.executable })
+      body: JSON.stringify({ exe: buildData.executable, rundir: buildData.rundir })
     });
     const runData = await runRes.json();
+
+    // Show sandbox info
+    if (runData.sandbox) {
+      tw(`\x1b[90m  🔒 ${runData.sandbox}\x1b[0m`);
+    }
+
     if (runData.stdout) runData.stdout.split('\n').forEach(l => term.writeln(l));
     if (runData.stderr?.trim()) {
       tw("\x1b[31m── stderr ──\x1b[0m");
