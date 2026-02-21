@@ -151,17 +151,18 @@ window("🧪 CodeIt GUI — Full Demo",
     vbox(
 
         # ── 1. Hello card ──────────────────────────────────
-        card(title="👋 Greeter",
+        card(
             input_box("name", label="Your name:", placeholder="Type your name…"),
             hbox(
                 button("Greet",  onclick="greet",         color="#166534"),
                 button("Clear",  onclick="clear_greeting"),
             ),
             label("", id="greeting"),
+            title="👋 Greeter",
         ),
 
         # ── 2. Counter ─────────────────────────────────────
-        card(title="🔢 Counter",
+        card(
             hbox(
                 button("− 10",  onclick="count_down"),
                 label("0", id="count_lbl",
@@ -171,10 +172,11 @@ window("🧪 CodeIt GUI — Full Demo",
                 button("Reset", onclick="count_reset"),
             ),
             progress(0, id="count_bar"),
+            title="🔢 Counter",
         ),
 
         # ── 3. Colour mixer ────────────────────────────────
-        card(title="🎨 RGB Colour Mixer",
+        card(
             slider("red",   0, 255, 99,  label="Red"),
             slider("green", 0, 255, 60,  label="Green"),
             slider("blue",  0, 255, 180, label="Blue"),
@@ -183,10 +185,11 @@ window("🧪 CodeIt GUI — Full Demo",
                   style={"background":"#633cb4","color":"#fff",
                          "padding":"6px 14px","borderRadius":"6px",
                          "fontFamily":"monospace","fontWeight":"600"}),
+            title="🎨 RGB Colour Mixer",
         ),
 
         # ── 4. Todo list ───────────────────────────────────
-        card(title="✅ To-Do List",
+        card(
             hbox(
                 input_box("todo_input", placeholder="New item…"),
                 button("Add",   onclick="add_todo",    color="#166534"),
@@ -194,10 +197,11 @@ window("🧪 CodeIt GUI — Full Demo",
             ),
             label("No items yet.", id="todo_list",
                   style={"whiteSpace":"pre-line","lineHeight":"1.8"}),
+            title="✅ To-Do List",
         ),
 
         # ── 5. Unit converter ──────────────────────────────
-        card(title="📐 Unit Converter",
+        card(
             hbox(
                 input_box("conv_val", placeholder="Value", value="100"),
                 select("conv_type",
@@ -206,15 +210,17 @@ window("🧪 CodeIt GUI — Full Demo",
             ),
             label("= 62.1371", id="conv_result",
                   style={"fontSize":"18px","fontWeight":"700","color":"#60a5fa"}),
+            title="📐 Unit Converter",
         ),
 
         # ── 6. Charts ──────────────────────────────────────
-        card(title="📊 Charts",
+        card(
             plot_line(_sine, title="sin(x°)", xlabel="degrees", ylabel="sin",
                       color="#f472b6"),
             spacer(8),
             plot_bar(_months, _revenue, title="Monthly Revenue ($k)",
                      color="#3b82f6"),
+            title="📊 Charts",
         ),
 
     )
