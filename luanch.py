@@ -218,6 +218,10 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cross-Origin-Opener-Policy",   "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         self.send_header("Access-Control-Allow-Origin",  "*")
+        # Never cache JS files — ensures worker.js and app.js are always fresh
+        if self.path and self.path.split("?")[0].endswith(".js"):
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
         super().end_headers()
 
     def log_message(self, fmt, *args):
@@ -326,11 +330,28 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
             if not rundir or not os.path.isdir(rundir):
                 rundir = os.path.dirname(exe)
 
+            # ── Snapshot directory state BEFORE execution ─────────────────────
+            # Record every file's mtime so we can detect new/changed files after.
+            # We exclude the executable itself and any pre-copied sandbox files.
+            def snapshot(d):
+                s = {}
+                try:
+                    for entry in os.scandir(d):
+                        if entry.is_file(follow_symlinks=False):
+                            try:
+                                s[entry.name] = entry.stat().st_mtime
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
+                return s
+
+            pre_snapshot = snapshot(rundir)
+
             sandbox_user = create_sandbox_user()
 
             try:
                 if sandbox_user:
-                    # Hand ownership to sandbox user
                     subprocess.run(
                         ["chown", "-R", f"{sandbox_user}:{sandbox_user}", rundir],
                         capture_output=True
@@ -345,6 +366,7 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
                     cmd, capture_output=True, text=True,
                     timeout=15, cwd=rundir
                 )
+
                 if sandbox_user:
                     sandbox_note = f"sandboxed as {sandbox_user}"
                 elif IS_LINUX_ROOT:
@@ -352,21 +374,47 @@ class IDEHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     sandbox_note = "no sandbox (needs Linux + root)"
 
+                # ── Diff directory AFTER execution ─────────────────────────────
+                # Collect files that are new or have a newer mtime.
+                # Skip the executable, skip files > 1 MB (binary guard).
+                SKIP     = {"main.out", "main.exe", os.path.basename(exe)}
+                MAX_SIZE = 1 * 1024 * 1024
+                output_files = {}
+                post_snapshot = snapshot(rundir)
+
+                for fname, mtime in post_snapshot.items():
+                    if fname in SKIP:
+                        continue
+                    # New file OR file whose mtime changed
+                    if fname not in pre_snapshot or mtime != pre_snapshot[fname]:
+                        fpath = os.path.join(rundir, fname)
+                        try:
+                            size = os.path.getsize(fpath)
+                            if size > MAX_SIZE:
+                                output_files[fname] = f"<binary or large file — {size} bytes>"
+                                continue
+                            with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
+                                output_files[fname] = fh.read()
+                        except OSError:
+                            pass
+
                 self.send_json(200, {
-                    "stdout":    r.stdout,
-                    "stderr":    r.stderr,
-                    "exit_code": r.returncode,
-                    "sandbox":   sandbox_note,
+                    "stdout":       r.stdout,
+                    "stderr":       r.stderr,
+                    "exit_code":    r.returncode,
+                    "sandbox":      sandbox_note,
+                    "output_files": output_files,   # {} if program wrote nothing
                 })
+
             except subprocess.TimeoutExpired:
                 self.send_json(200, {
                     "stdout": "", "stderr": "Timed out (15 s).",
-                    "exit_code": -1, "sandbox": ""
+                    "exit_code": -1, "sandbox": "", "output_files": {}
                 })
             except Exception as e:
                 self.send_json(200, {
                     "stdout": "", "stderr": str(e),
-                    "exit_code": -1, "sandbox": ""
+                    "exit_code": -1, "sandbox": "", "output_files": {}
                 })
             finally:
                 delete_sandbox_user(sandbox_user)
